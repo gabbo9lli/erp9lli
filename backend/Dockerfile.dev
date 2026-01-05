@@ -1,0 +1,33 @@
+# Use a development-friendly Python image
+FROM python:3.11-slim
+
+# Set the working directory for the application
+WORKDIR /app
+
+# --- 1. Dependencies and Setup ---
+
+# Copy only the requirements file first to take advantage of Docker's layer caching
+# Note: If you have different requirements for dev/prod, you might rename this file
+COPY requirements.txt .
+
+# Install dependencies, ensuring we don't cache installation files (saves space)
+# In a development scenario, you might install debugging tools or extra development packages here
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- 2. Code Copy and Configuration ---
+
+# Copy the rest of the application code
+# This step is mainly for the initial image build. During 'docker-compose up -f docker-compose.dev.yml', 
+# the volumes will override this with your local code, enabling live changes.
+COPY . .
+
+# Expose the default Flask development port. 
+# This is mainly for documentation; the docker-compose file handles the actual mapping.
+EXPOSE 5000
+
+# --- 3. Default Execution Command ---
+
+# Define the command to run the application using the built-in Flask server.
+# This CMD is often overridden by the 'command' key in docker-compose.dev.yml, 
+# but it serves as a good default if running the container standalone.
+CMD ["python", "app.py"]

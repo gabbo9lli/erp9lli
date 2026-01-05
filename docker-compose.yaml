@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # --- Frontend Service Definition ---
+  frontend:
+    # Build context remains the same regardless of env
+    build:
+      context: ./frontend
+    # Assign container names for consistency (dev/prod files will override with unique names)
+    container_name: frontend_base
+    
+    # All services need to belong to the same network
+    networks:
+      - app-network
+    
+    # Note: No ports, volumes, or specific commands here. Those are environment-specific.
+    
+  # --- Backend Service Definition ---
+  backend:
+    build:
+      context: ./backend
+    container_name: backend_base
+    
+    networks:
+      - app-network
+      
+    # Use environment file for common configuration (like database credentials)
+    # The actual file content (e.g., .env) is environment-dependent but the reference is common.
+    # Note: You would place a shared .env file in your root directory.
+    # env_file:
+    #   - .env
+
+# --- Networks Definition ---
+# Define the bridge network so all containers can communicate using service names (e.g., 'backend')
+networks:
+  app-network:
+    driver: bridge
