@@ -1,60 +1,58 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import axios from 'axios'
 
-// Reactive variables to store state
-const message = ref('Waiting for Flask...')
-const status = ref('loading') // 'loading', 'success', or 'error'
+const isLogin = ref(true)
+const email = ref('')
+const password = ref('')
+const message = ref('')
 
-const fetchData = async () => {
+const handleAuth = async () => {
+  const endpoint = isLogin.value ? '/api/signin' : '/api/signup'
   try {
-    // We use /api because of the vite.config.js proxy
-    const response = await axios.get('/api/hello')
+    const response = await axios.post(endpoint, {
+      email: email.value,
+      password: password.value
+    })
     
-    // Update our variables with the Flask response
-    message.value = response.data.message
-    status.value = 'success'
+    if (isLogin.value) {
+      localStorage.setItem('token', response.data.access_token)
+      message.value = "Successfully Signed In!"
+    } else {
+      message.value = "Successfully Signed Up! Please Sign In."
+      isLogin.value = true
+    }
   } catch (err) {
-    console.error("Connection Error:", err)
-    message.value = "Failed to connect to Flask backend."
-    status.value = 'error'
+    message.value = err.response?.data?.msg || "An error occurred"
   }
 }
-
-// Call the function when the component loads
-onMounted(() => {
-  fetchData()
-})
 </script>
 
 <template>
-  <main class="container">
-    <h1>Vue + Flask Interaction</h1>
+  <div class="portal-container">
+    <div class="auth-card">
+      <h2>{{ isLogin ? 'Sign In' : 'Sign Up' }}</h2>
+      
+      <form @submit.prevent="handleAuth">
+        <input v-model="email" type="email" placeholder="Email" required />
+        <input v-model="password" type="password" placeholder="Password" required />
+        <button type="submit">{{ isLogin ? 'Login' : 'Create Account' }}</button>
+      </form>
 
-    <div :class="['card', status]">
-      <p v-if="status === 'loading'">⏳ Connecting to backend...</p>
-      <p v-else-if="status === 'success'">✅ Backend says: <strong>{{ message }}</strong></p>
-      <p v-else>❌ Error: {{ message }}</p>
+      <p @click="isLogin = !isLogin" class="toggle-link">
+        {{ isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In" }}
+      </p>
+
+      <p v-if="message" class="status-msg">{{ message }}</p>
     </div>
-
-    <button @click="fetchData">Refresh Data</button>
-  </main>
+  </div>
 </template>
 
 <style scoped>
-.container {
-  font-family: sans-serif;
-  text-align: center;
-  margin-top: 50px;
-}
-.card {
-  padding: 20px;
-  border-radius: 8px;
-  display: inline-block;
-  margin: 20px;
-  border: 1px solid #ccc;
-}
-.success { background-color: #e6fffa; border-color: #38b2ac; }
-.error { background-color: #fff5f5; border-color: #feb2b2; }
-button { padding: 10px 20px; cursor: pointer; }
+.portal-container { display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f2f5; }
+.auth-card { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; }
+input { width: 100%; margin-bottom: 1rem; padding: 10px; box-sizing: border-box; }
+button { width: 100%; padding: 10px; background: #42b983; color: white; border: none; cursor: pointer; }
+.toggle-link { color: #2c3e50; cursor: pointer; font-size: 0.8rem; margin-top: 1rem; text-decoration: underline; }
+.status-msg { font-size: 0.9rem; color: #e74c3c; margin-top: 10px; }
 </style>
