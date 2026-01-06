@@ -18,8 +18,13 @@ FROM base AS build-stage
 RUN npm run build
 
 # Production Stage
-FROM nginx:stable-alpine AS production
-# Copy the compiled files from build-stage to Nginx
-COPY --from=build-stage /app/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+FROM alpine:latest AS production
+WORKDIR /app
+
+# Copy files from build-stage to the directory mapped in your compose volume
+COPY --from=build-stage /app/dist /app/dist
+
+RUN ls -la /app/dist
+# This container doesn't need to run a server, 
+# it just needs to exist so the volume is populated.
+CMD ["sleep", "infinity"]

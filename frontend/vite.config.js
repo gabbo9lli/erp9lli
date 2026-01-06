@@ -20,6 +20,10 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       }
+    },
+
+    build: {
+       outDir: 'dist', // Ensure this matches your Dockerfile COPY command
     }
   }
 })
