@@ -8,56 +8,32 @@ services:
       context: ./proxy
       dockerfile: Dockerfile
     container_name: production_proxy
-    
-    # Mount the static files volume created by the frontend service
     volumes:
       - vue_static:/usr/share/nginx/html:ro # Read-only access to static files
-    
-    # Only the proxy is exposed to the outside world on port 80
     ports:
       - "80:80" 
-    
-    # Ensure the other services are up before the proxy starts routing
     depends_on:
       - backend
       - frontend 
 
-  # --- 2. Backend Service (Gunicorn/Flask) ---
   backend:
     # Use the production Dockerfile with Gunicorn
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod 
-    container_name: flask_gunicorn
-    
-    # Expose the internal port (8000) for the proxy to access, but NOT to the host machine
+      target: production
+    container_name: backend_flask_gunicorn_prod
     expose:
       - "8000"
-    
-    environment:
-      - FLASK_ENV=production
-      - FLASK_DEBUG=0
-      - VUE_APP_API_URL=/api/ # Used in the Vue build stage
-      
-    # Add a restart policy for robust production deployment
+    env_file: .env.prod
     restart: always
 
   # --- 3. Frontend Service (Vue Build) ---
   frontend:
-    # Use the multi-stage Dockerfile that creates the optimized static build
     build:
-      context: ./frontend
-      dockerfile: Dockerfile.prod
+      target: production
     container_name: vue_build
-    
-    # The output of this build (the static files) is saved into the named volume
     volumes:
       - vue_static:/app/dist # Assuming your build output is in /app/dist
-    
-    # This service runs only to build the files into the volume, 
-    # so we don't need it running after the build phase is complete.
     command: npm run build # Explicitly run the build command
 
-# --- Volumes (Used to share Vue build output between frontend and proxy) ---
 volumes:
   vue_static:
