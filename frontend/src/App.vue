@@ -1,58 +1,90 @@
-<script setup>
-import { ref } from 'vue'
-import axios from 'axios'
-
-const isLogin = ref(true)
-const email = ref('')
-const password = ref('')
-const message = ref('')
-
-const handleAuth = async () => {
-  const endpoint = isLogin.value ? '/api/signin' : '/api/signup'
-  try {
-    const response = await axios.post(endpoint, {
-      email: email.value,
-      password: password.value
-    })
-    
-    if (isLogin.value) {
-      localStorage.setItem('token', response.data.access_token)
-      message.value = "Successfully Signed In!"
-    } else {
-      message.value = "Successfully Signed Up! Please Sign In."
-      isLogin.value = true
-    }
-  } catch (err) {
-    message.value = err.response?.data?.msg || "An error occurred"
-  }
-}
-</script>
-
 <template>
-  <div class="portal-container">
-    <div class="auth-card">
-      <h2>{{ isLogin ? 'Sign In' : 'Sign Up' }}</h2>
-      
-      <form @submit.prevent="handleAuth">
-        <input v-model="email" type="email" placeholder="Email" required />
-        <input v-model="password" type="password" placeholder="Password" required />
-        <button type="submit">{{ isLogin ? 'Login' : 'Create Account' }}</button>
-      </form>
+  <div class="portal">
+    <div class="navbar">
+      <div class="nav-left">
+        <div class="logo">DevPortal</div>
+          <template v-if="isLoggedIn" class="navbar">
+            <router-link to="/healthcheck" class="nav-item">Healthchek</router-link>
+            <router-link to="/users" class="nav-item">Users</router-link>
+            <router-link to="/database" class="nav-item">Database</router-link>
+          </template>
+      </div>
 
-      <p @click="isLogin = !isLogin" class="toggle-link">
-        {{ isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In" }}
-      </p>
-
-      <p v-if="message" class="status-msg">{{ message }}</p>
+      <div class="nav-right">
+        <div class="user-menu">
+          <router-link to="/settings" class="username-link">
+            <span class="user-icon">👤</span> {{ currentUser }}
+          </router-link>
+          <button @click="handleLogout" class="logout-btn">Logout</button>
+        </div>
+      </div>
     </div>
+
+    <main class="content">
+      <router-view />
+    </main>
   </div>
 </template>
 
+<script setup>
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+
+const router = useRouter()
+const route = useRoute()
+const isLoggedIn = ref(false)
+const currentUser = ref('')
+
+onUnmounted(() => {
+  // Clean up listener to prevent memory leaks
+  window.removeEventListener('auth-change', checkAuth);
+});
+
+const checkAuth = () => {
+  const session = localStorage.getItem('user_session')
+  isLoggedIn.value = !!session
+  currentUser.value = session || ''
+}
+
+// onMounted(checkAuth)
+// watch(() => route.path, checkAuth)
+onMounted(() => {
+  checkAuth();
+  // Listen for the login event
+  window.addEventListener('auth-change', checkAuth);
+});
+
+const handleLogout = () => {
+  localStorage.removeItem('user_session')
+  checkAuth()
+  router.push('/auth')
+}
+</script>
+
 <style scoped>
-.portal-container { display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f2f5; }
-.auth-card { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; }
-input { width: 100%; margin-bottom: 1rem; padding: 10px; box-sizing: border-box; }
-button { width: 100%; padding: 10px; background: #42b983; color: white; border: none; cursor: pointer; }
-.toggle-link { color: #2c3e50; cursor: pointer; font-size: 0.8rem; margin-top: 1rem; text-decoration: underline; }
-.status-msg { font-size: 0.9rem; color: #e74c3c; margin-top: 10px; }
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 2rem;
+  height: 60px;
+  background: #2c3e50;
+  color: white;
+}
+.nav-left, .nav-right { display: flex; align-items: center; gap: 20px; }
+.nav-item, .username-link {
+  color: #bdc3c7;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.router-link-active { color: #42b983; font-weight: bold; }
+.user-icon { margin-right: 5px; }
+.logout-btn {
+  background: #e74c3c;
+  border: none;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
 </style>

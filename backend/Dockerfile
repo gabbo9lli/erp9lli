@@ -6,13 +6,16 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
+RUN chmod +x entrypoint.sh
+
 # Development Stage
 FROM base AS development
 ENV FLASK_ENV=development
-CMD ["flask", "run", "--host=0.0.0.0"]
+
+ENTRYPOINT ["./entrypoint.sh"]
 
 # Production Stage
 FROM base AS production
 RUN pip install gunicorn
 ENV FLASK_ENV=production
-CMD ["gunicorn", "-b", "0.0.0.0:8000", "app:app"]
+ENTRYPOINT ["./entrypoint.sh"]

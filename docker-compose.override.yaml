@@ -2,10 +2,8 @@ version: '3.8'
 
 services:
   frontend:
-    # Use the default build (assuming it uses Node)
     build:
       target: development
-    container_name: frontend_vue_dev
     ports:
       - "5173:5173"
     environment:
@@ -17,14 +15,18 @@ services:
     depends_on:
       - backend
 
-  # --- Backend Service (Flask Development Server) ---
   backend:
     build:
       target: development
-    container_name: backend_flask_dev
     ports:
       - "5000:5000"
     volumes:
       - ./backend:/app
     env_file: .env.dev
     command: python app.py
+    depends_on:
+      - db
+
+  db:
+    environment:
+      - POSTGRES_DB=erp9lli_dev

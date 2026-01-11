@@ -5,18 +5,29 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: frontend
     networks:
       - app-network
 
-  # --- Backend Service Definition ---
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: backend    
     networks:
       - app-network
+
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=gabbo
+      - POSTGRES_PASSWORD=gabbino
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
 
 networks:
   app-network:
