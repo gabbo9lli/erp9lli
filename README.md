@@ -1,5 +1,7 @@
+docker compose build --no-cache 
+
 #env environment
-docker compose up --build
+docker compose -f docker-compose.yaml -f docker-compose.override.yaml up --build -d
 
 #prod
 docker-compose -f docker-compose.yaml -f docker-compose.prod.yaml up --build -d
