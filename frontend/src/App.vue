@@ -7,6 +7,7 @@
             <router-link to="/healthcheck" class="nav-item">Healthchek</router-link>
             <router-link to="/users" class="nav-item">Users</router-link>
             <router-link to="/database" class="nav-item">Database</router-link>
+            <router-link to="/users2" class="nav-item">Users2</router-link>
           </template>
       </div>
 

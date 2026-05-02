@@ -1,3 +1,6 @@
+from gevent import monkey
+monkey.patch_all()
+
 from flask import Flask, jsonify, request
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager, create_access_token
@@ -8,12 +11,21 @@ from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime
 import re
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config["JWT_SECRET_KEY"] = "super-secret-key" # Change this!
 jwt = JWTManager(app)
 CORS(app)
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*",
+    async_mode='gevent',
+    message_queue='redis://redis:6379/0',
+    resource_path='/api/socket.io', # Deve coincidere con il path del frontend
+    path='/api/socket.io'           # Per sicurezza impostiamo entrambi
+)
 
 DB_TYPE = os.environ.get('DB_TYPE', 'sqlite')
 if DB_TYPE == 'postgres':
@@ -23,9 +35,6 @@ else:
 
 db.init_app(app)
 migrate = Migrate(app, db)
-
-# Mock database
-users = {"pippo@1.com": "pippo", }
 
 @app.route('/api/data')
 def get_data():
@@ -50,7 +59,7 @@ def signup():
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "An account with this email already exists"}), 400
     
-    user = User(email=email)
+    user = User(username=email, email=email)
     user.set_password(data['password'])
     db.session.add(user)
     db.session.commit()
@@ -59,6 +68,7 @@ def signup():
 @app.route('/api/signin', methods=['POST'])
 def signin():
     data = request.get_json()
+    username = data.get('email')
     email = data.get('email')
     password = data.get('password')
     if users.get(email) == password:
@@ -103,17 +113,67 @@ def reset_password():
     db.session.commit()
     return jsonify({"message": "Password updated successfully"}), 200
 
+def format_user(user):
+    """Trasforma l'oggetto DB in dizionario sicuro per il frontend"""
+    return {
+        "username": user.username,
+        "email": user.email,
+        # Inviamo solo un booleano per il token, non il token stesso!
+        "reset_token": True if user.reset_token else False,
+        "reset_token_expiry": user.reset_token_expiry.isoformat() if user.reset_token_expiry else None
+    }
+
+@socketio.on('get_users')
+def handle_get_users():
+    users_all = User.query.all() # Esempio SQLAlchemy
+    data = [format_user(u) for u in users_all]
+    emit('users_update', data)
+
+
+from sqlalchemy.exc import IntegrityError
+
 @app.route('/api/users', methods=['GET', 'POST'])
-def handle_users():
-    if request.method == 'POST':
-        data = request.json
-        new_user = User(email=data['email'])
-        db.session.add(new_user)
+@app.route('/api/users/<int:uid>', methods=['PUT', 'DELETE'])
+def user_service(uid=None):
+    if request.method == 'GET':
+        users = User.query.all()
+        return jsonify([{
+            "id": u.id, 
+            "name": u.username,
+            "email": u.email,
+            "role": getattr(u, 'role', 'User') # Safe access
+        } for u in users])
+
+    if request.method == 'DELETE' and uid:
+        user = User.query.get_or_404(uid)
+        db.session.delete(user)
+    else:
+        data = request.get_json() or {}
+        user = User.query.get(uid) if uid else User()
+        
+        # Map frontend 'name' to backend 'username'
+        if 'name' in data: user.username = data['name']
+        if 'email' in data: user.email = data['email']
+        
+        # Only try to set role if the column actually exists in your DB
+        if 'role' in data and hasattr(User, 'role'): 
+            user.role = data['role']
+        
+        if not uid:
+            # Set a dummy password if one isn't provided to satisfy constraints
+            user.set_password(data.get('password', 'Default123!'))
+            db.session.add(user)
+
+    try:
         db.session.commit()
-        return jsonify({"message": "User created!"}), 201
+        return jsonify({"message": "Success"}), (201 if not uid else 200)
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "User with this email or username already exists"}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
     
-    users = User.query.all()
-    return jsonify([{"email": u.email} for u in users])
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -177,7 +237,11 @@ def get_table_data(table_name):
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@socketio.on('connect')
+def handle_connect():
+    print("Client connesso!")
 
 if __name__ == '__main__':
     # Flask runs on port 5000 by default
-    app.run(host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000)

@@ -8,6 +8,9 @@ services:
     networks:
       - app-network
 
+  redis:
+    image: "redis:alpine"
+
   backend:
     build:
       context: ./backend

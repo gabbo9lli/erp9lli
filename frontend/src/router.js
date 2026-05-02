@@ -3,6 +3,7 @@ import Auth from './components/Auth.vue'
 import HealthCheck from './components/HealthCheck.vue'
 import UserManagement from './components/UserManagement.vue'
 import DatabaseExplorer from './components/DatabaseExplorer.vue'
+import UserManagement2 from './components/UserManagement2.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -12,6 +13,7 @@ const routes = [
   { path: '/users', component: UserManagement, meta: { requiresAuth: true } },
   { path: '/database', component: DatabaseExplorer, meta: { requiresAuth: true } },
   { path: '/settings', component: () => import('./components/Settings.vue'), meta: { requiresAuth: true }},
+  { path: '/users2', component: UserManagement2, meta: { requiresAuth: true } },
 ]
 
 export const router = createRouter({

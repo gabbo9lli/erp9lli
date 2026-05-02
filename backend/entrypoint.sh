@@ -41,7 +41,7 @@ if [ "$FLASK_ENV" = "production" ]; then
     # --bind 0.0.0.0:5000: liston on all interfaces
     # --workers 4: standard formula is (2 x CPUs) + 1
     # app:app refers to file_name:flask_instance_name
-    exec gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout 120 app:app
+    exec gunicorn --worker-class gevent --workers 4 --bind 0.0.0.0:5000 --timeout 120 app:app
 else
     echo "Starting Flask Development Server..."
     exec python app.py

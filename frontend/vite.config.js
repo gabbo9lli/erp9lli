@@ -1,8 +1,14 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { quasar, transformAssetUrls } from '@quasar/vite-plugin'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue({
+      template: { transformAssetUrls }
+    }),
+    quasar()
+  ],
   server: {
     // 1. Listen on all addresses so Docker can map the port
     host: '0.0.0.0', 
@@ -19,6 +25,7 @@ export default defineConfig({
         target: 'http://backend:5000', // Use the Docker service name of your Flask app
         changeOrigin: true,
         secure: false,
+        ws: true
       }
     },
 

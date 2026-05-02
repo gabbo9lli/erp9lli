@@ -5,3 +5,7 @@ Flask-JWT-Extended==4.7.1
 flask-sqlalchemy
 psycopg2-binary  # The Postgres driver for Python
 flask-migrate    # Recommended for handling DB schema changes
+gevent
+flask-socketio
+gevent-websocket
+redis
