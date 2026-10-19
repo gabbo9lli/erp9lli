@@ -6,7 +6,7 @@ from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager, create_access_token
 from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
-from models import db, User
+from models import db, User, Partner, Product
 from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime
@@ -318,6 +318,214 @@ def get_table_data(table_name):
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ==========================================
+# PARTNER / SOGGETTI COMMERCIALI
+# ==========================================
+
+@app.route('/api/partners', methods=['GET'])
+@require_auth()
+def get_partners():
+    query = Partner.query
+    tipo = request.args.get('tipo')
+    if tipo and tipo != 'tutti':
+        if tipo in ('cliente', 'fornitore', 'vettore'):
+            query = query.filter((Partner.tipo == tipo) | (Partner.tipo == 'entrambi'))
+        else:
+            query = query.filter_by(tipo=tipo)
+    
+    search = request.args.get('search')
+    if search:
+        search_filter = f"%{search}%"
+        query = query.filter(
+            (Partner.ragione_sociale.ilike(search_filter)) |
+            (Partner.partita_iva.ilike(search_filter)) |
+            (Partner.citta.ilike(search_filter))
+        )
+
+    attivo = request.args.get('attivo')
+    if attivo is not None:
+        is_attivo = attivo.lower() in ('true', '1')
+        query = query.filter_by(attivo=is_attivo)
+
+    partners = query.order_by(Partner.ragione_sociale.asc()).all()
+    return jsonify([p.to_dict() for p in partners]), 200
+
+@app.route('/api/partners', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_partner():
+    data = request.get_json() or {}
+    if not data.get('ragione_sociale'):
+        return jsonify({"error": "ragione_sociale is required"}), 400
+
+    partner = Partner(
+        ragione_sociale=data.get('ragione_sociale'),
+        tipo=data.get('tipo', 'cliente'),
+        partita_iva=data.get('partita_iva'),
+        codice_fiscale=data.get('codice_fiscale'),
+        indirizzo=data.get('indirizzo'),
+        cap=data.get('cap'),
+        citta=data.get('citta'),
+        provincia=data.get('provincia'),
+        nazione=data.get('nazione', 'IT'),
+        codice_sdi=data.get('codice_sdi', '0000000'),
+        pec=data.get('pec'),
+        istituto_certificatore=data.get('istituto_certificatore'),
+        iban=data.get('iban'),
+        condizioni_pagamento=data.get('condizioni_pagamento', '30gg fm'),
+        attivo=data.get('attivo', True)
+    )
+    db.session.add(partner)
+    try:
+        db.session.commit()
+        return jsonify(partner.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/partners/<int:pid>', methods=['PUT'])
+@require_auth(roles=['Admin'])
+def update_partner(pid):
+    partner = db.session.get(Partner, pid)
+    if not partner:
+        return jsonify({"error": "Partner not found"}), 404
+    data = request.get_json() or {}
+    
+    for key, value in data.items():
+        if hasattr(partner, key) and key != 'id':
+            setattr(partner, key, value)
+
+    try:
+        db.session.commit()
+        return jsonify(partner.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/partners/<int:pid>', methods=['DELETE'])
+@require_auth(roles=['Admin'])
+def delete_partner(pid):
+    partner = db.session.get(Partner, pid)
+    if not partner:
+        return jsonify({"error": "Partner not found"}), 404
+    partner.attivo = False
+    try:
+        db.session.commit()
+        return jsonify({"message": "Partner deactivated"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+# ==========================================
+# PRODUCT / CATALOGO ARTICOLI
+# ==========================================
+
+@app.route('/api/products', methods=['GET'])
+@require_auth()
+def get_products():
+    query = Product.query
+    categoria = request.args.get('categoria')
+    if categoria and categoria != 'tutti':
+        query = query.filter_by(categoria=categoria)
+
+    in_scadenza = request.args.get('in_scadenza')
+    if in_scadenza is not None:
+        query = query.filter_by(in_scadenza=in_scadenza.lower() in ('true', '1'))
+
+    search = request.args.get('search')
+    if search:
+        search_filter = f"%{search}%"
+        query = query.filter(
+            (Product.codice.ilike(search_filter)) |
+            (Product.descrizione.ilike(search_filter))
+        )
+
+    attivo = request.args.get('attivo')
+    if attivo is not None:
+        query = query.filter_by(attivo=attivo.lower() in ('true', '1'))
+
+    products = query.order_by(Product.codice.asc()).all()
+    return jsonify([p.to_dict() for p in products]), 200
+
+@app.route('/api/products', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_product():
+    data = request.get_json() or {}
+    codice = data.get('codice')
+    descrizione = data.get('descrizione')
+    if not codice or not descrizione:
+        return jsonify({"error": "codice and descrizione are required"}), 400
+
+    if Product.query.filter_by(codice=codice).first():
+        return jsonify({"error": f"Product with code '{codice}' already exists"}), 400
+
+    product = Product(
+        codice=codice,
+        descrizione=descrizione,
+        descrizione_en=data.get('descrizione_en'),
+        categoria=data.get('categoria', 'fresco'),
+        unita_misura=data.get('unita_misura', 'KG'),
+        peso_netto=float(data.get('peso_netto', 0.0)),
+        peso_lordo=float(data.get('peso_lordo', 0.0)),
+        tara=float(data.get('tara', 0.0)),
+        in_scadenza=bool(data.get('in_scadenza', False)),
+        scorta_minima=float(data.get('scorta_minima', 0.0)),
+        prezzo_vendita=float(data.get('prezzo_vendita', 0.0)),
+        prezzo_acquisto=float(data.get('prezzo_acquisto', 0.0)),
+        aliquota_iva=int(data.get('aliquota_iva', 4)),
+        codice_nc=data.get('codice_nc'),
+        attivo=data.get('attivo', True)
+    )
+    db.session.add(product)
+    try:
+        db.session.commit()
+        return jsonify(product.to_dict()), 201
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": f"Product with code '{codice}' already exists"}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/products/<int:pid>', methods=['PUT'])
+@require_auth(roles=['Admin'])
+def update_product(pid):
+    product = db.session.get(Product, pid)
+    if not product:
+        return jsonify({"error": "Product not found"}), 404
+    data = request.get_json() or {}
+
+    for key, value in data.items():
+        if hasattr(product, key) and key != 'id':
+            if key in ('peso_netto', 'peso_lordo', 'tara', 'scorta_minima', 'prezzo_vendita', 'prezzo_acquisto'):
+                value = float(value)
+            elif key == 'aliquota_iva':
+                value = int(value)
+            setattr(product, key, value)
+
+    try:
+        db.session.commit()
+        return jsonify(product.to_dict()), 200
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Product code already exists"}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/products/<int:pid>', methods=['DELETE'])
+@require_auth(roles=['Admin'])
+def delete_product(pid):
+    product = db.session.get(Product, pid)
+    if not product:
+        return jsonify({"error": "Product not found"}), 404
+    product.attivo = False
+    try:
+        db.session.commit()
+        return jsonify({"message": "Product deactivated"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
     
 @socketio.on('connect')
 def handle_connect():

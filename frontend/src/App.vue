@@ -6,6 +6,8 @@
           <template v-if="isLoggedIn" class="navbar">
             <router-link to="/healthcheck" class="nav-item">Health Check</router-link>
             <router-link to="/users" class="nav-item">Users</router-link>
+            <router-link to="/partners" class="nav-item">Soggetti</router-link>
+            <router-link to="/products" class="nav-item">Articoli</router-link>
             <router-link to="/database" class="nav-item">Database</router-link>
           </template>
       </div>

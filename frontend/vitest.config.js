@@ -20,7 +20,8 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@vue/test-utils': path.resolve(__dirname, './node_modules/@vue/test-utils'),
-      'vue': path.resolve(__dirname, './node_modules/vue')
+      'vue': path.resolve(__dirname, './node_modules/vue'),
+      'axios': path.resolve(__dirname, './node_modules/axios')
     }
   }
 })
