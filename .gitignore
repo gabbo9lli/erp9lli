@@ -3,3 +3,6 @@ erp9lli.code-workspace
 migrations
 __pycache__
 instance
+node_modules
+dist
+.pytest_cache
