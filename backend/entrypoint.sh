@@ -3,7 +3,7 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
-if [ "$DB_TYPE" = "postgres" ]; then
+if [ "$DB_TYPE" = "postgres" ] || [ "$DB_TYPE" = "postgresql" ]; then
   echo "Checking PostgreSQL availability..."
   # We use a simple python command to check the connection
   python << END
@@ -38,10 +38,10 @@ flask db upgrade
 # 3. Start Server based on Environment
 if [ "$FLASK_ENV" = "production" ]; then
     echo "Starting Gunicorn in production mode..."
-    # --bind 0.0.0.0:5000: liston on all interfaces
+    # --bind 0.0.0.0:8000: listen on all interfaces
     # --workers 4: standard formula is (2 x CPUs) + 1
     # app:app refers to file_name:flask_instance_name
-    exec gunicorn --worker-class gevent --workers 4 --bind 0.0.0.0:5000 --timeout 120 app:app
+    exec gunicorn --worker-class gevent --workers 4 --bind 0.0.0.0:8000 --timeout 120 app:app
 else
     echo "Starting Flask Development Server..."
     exec python app.py

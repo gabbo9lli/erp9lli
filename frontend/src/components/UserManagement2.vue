@@ -87,7 +87,7 @@ const setupSocket = () => {
   socket.on('connect', () => console.log('✅ Socket Connected'));
   
   // Listen for the event emitted by your Flask backend
-  socket.on('user_update', (data) => {
+  socket.on('users_update', (data) => {
     users.value = data;
   });
 

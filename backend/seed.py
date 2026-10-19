@@ -6,7 +6,8 @@ def seed_data():
         # Check if we already have users
         if not User.query.first():
             print("Seeding database...")
-            test_user = User(email='dev@example.com')
+            test_user = User(username='dev@example.com', email='dev@example.com', role='Admin')
+            test_user.set_password('DevPassword123!')
             db.session.add(test_user)
             db.session.commit()
             print("Seed complete.")

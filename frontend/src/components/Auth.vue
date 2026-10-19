@@ -59,6 +59,9 @@
 
 <script setup>
 import { ref, reactive, computed } from 'vue'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 
 // State Management
 const view = ref('login') // 'login', 'signup', or 'forgot'

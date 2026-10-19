@@ -41,7 +41,7 @@ const loading = ref(false)
 const checkHealth = async () => {
   loading.value = true
   try {
-    const res = await fetch('http://localhost:5000/api/health')
+    const res = await fetch('/api/health')
     data.value = await res.json()
   } catch (err) {
     data.value = { flask_status: 'DOWN' }

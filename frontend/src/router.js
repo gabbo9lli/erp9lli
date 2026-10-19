@@ -10,10 +10,10 @@ const routes = [
   { path: '/dashboard', component: Auth },
   { path: '/auth', component: Auth },
   { path: '/healthcheck', component: HealthCheck, meta: { requiresAuth: true } },
-  { path: '/users', component: UserManagement, meta: { requiresAuth: true } },
+  { path: '/users', component: UserManagement2, meta: { requiresAuth: true } },
   { path: '/database', component: DatabaseExplorer, meta: { requiresAuth: true } },
   { path: '/settings', component: () => import('./components/Settings.vue'), meta: { requiresAuth: true }},
-  { path: '/users2', component: UserManagement2, meta: { requiresAuth: true } },
+  { path: '/users2', redirect: '/users' },
 ]
 
 export const router = createRouter({

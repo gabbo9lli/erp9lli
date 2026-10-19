@@ -8,8 +8,10 @@ import 'quasar/dist/quasar.css'
 
 const app = createApp(App)
 
-// Optional: Set a base URL so you don't type it every time
-axios.defaults.baseURL = 'http://localhost:5000'
+// Configura baseURL opzionale se definita da VITE_API_URL (altrimenti usa relative path /api)
+if (import.meta.env.VITE_API_URL) {
+  axios.defaults.baseURL = import.meta.env.VITE_API_URL
+}
 
 app.use(Quasar, {
   plugins: {

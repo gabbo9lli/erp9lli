@@ -15,7 +15,7 @@ from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config["JWT_SECRET_KEY"] = "super-secret-key" # Change this!
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
 jwt = JWTManager(app)
 CORS(app)
 socketio = SocketIO(
@@ -28,7 +28,7 @@ socketio = SocketIO(
 )
 
 DB_TYPE = os.environ.get('DB_TYPE', 'sqlite')
-if DB_TYPE == 'postgres':
+if DB_TYPE in ('postgres', 'postgresql'):
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
@@ -67,12 +67,14 @@ def signup():
 
 @app.route('/api/signin', methods=['POST'])
 def signin():
-    data = request.get_json()
-    username = data.get('email')
+    data = request.get_json() or {}
     email = data.get('email')
     password = data.get('password')
-    if users.get(email) == password:
-        token = create_access_token(identity=email)
+    if not email or not password:
+        return jsonify({"msg": "Email and password are required"}), 400
+    user = User.query.filter_by(email=email).first()
+    if user and user.check_password(password):
+        token = create_access_token(identity=user.email)
         return jsonify(access_token=token), 200
     return jsonify({"msg": "Bad email or password"}), 401
 
@@ -116,12 +118,23 @@ def reset_password():
 def format_user(user):
     """Trasforma l'oggetto DB in dizionario sicuro per il frontend"""
     return {
+        "id": user.id,
+        "name": user.username,
         "username": user.username,
         "email": user.email,
+        "role": getattr(user, 'role', 'User'),
         # Inviamo solo un booleano per il token, non il token stesso!
         "reset_token": True if user.reset_token else False,
         "reset_token_expiry": user.reset_token_expiry.isoformat() if user.reset_token_expiry else None
     }
+
+def broadcast_users():
+    try:
+        users_all = User.query.all()
+        data = [format_user(u) for u in users_all]
+        socketio.emit('users_update', data)
+    except Exception as e:
+        print(f"Socket broadcast error: {e}")
 
 @socketio.on('get_users')
 def handle_get_users():
@@ -166,6 +179,7 @@ def user_service(uid=None):
 
     try:
         db.session.commit()
+        broadcast_users()
         return jsonify({"message": "Success"}), (201 if not uid else 200)
     except IntegrityError:
         db.session.rollback()
@@ -221,6 +235,9 @@ def db_explorer():
 
 @app.route('/api/db-explorer/<table_name>/data', methods=['GET'])
 def get_table_data(table_name):
+    inspector = inspect(db.engine)
+    if table_name not in inspector.get_table_names():
+        return jsonify({"error": "Table not found"}), 404
     try:
         # Fetch the first 10 rows
         result = db.session.execute(text(f"SELECT * FROM {table_name} LIMIT 10"))
