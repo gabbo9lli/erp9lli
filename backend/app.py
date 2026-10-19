@@ -30,7 +30,10 @@ socketio = SocketIO(
 
 DB_TYPE = os.environ.get('DB_TYPE', 'sqlite')
 if DB_TYPE in ('postgres', 'postgresql'):
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+    db_url = os.environ.get('DATABASE_URL', '')
+    if db_url.startswith('postgresql://') and not db_url.startswith('postgresql+'):
+        db_url = db_url.replace('postgresql://', 'postgresql+psycopg2://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 

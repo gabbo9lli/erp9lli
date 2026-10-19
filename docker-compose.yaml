@@ -10,6 +10,8 @@ services:
 
   redis:
     image: "redis:alpine"
+    networks:
+      - app-network
 
   backend:
     build:
@@ -28,6 +30,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
 
 volumes:
   postgres_data:
