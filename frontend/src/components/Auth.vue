@@ -31,6 +31,14 @@
         >
           {{ loading ? 'Processing...' : actionButtonText }}
         </button>
+
+        <div class="sso-divider">
+          <span>oppure</span>
+        </div>
+
+        <a href="/oauth2/start?rd=/dashboard" class="sso-btn">
+          Accedi con SSO / OIDC
+        </a>
       </div>
 
       <div class="auth-footer">
@@ -189,6 +197,45 @@ input {
 }
 
 .primary-btn:disabled { background: #b2bec3; cursor: not-allowed; }
+
+.sso-divider {
+  margin: 1.2rem 0;
+  text-align: center;
+  position: relative;
+}
+.sso-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #e2e8f0;
+}
+.sso-divider span {
+  position: relative;
+  background: white;
+  padding: 0 10px;
+  color: #718096;
+  font-size: 0.8rem;
+}
+
+.sso-btn {
+  display: block;
+  width: 100%;
+  padding: 0.8rem;
+  background: #2b6cb0;
+  color: white;
+  text-align: center;
+  text-decoration: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: background 0.2s;
+  box-sizing: border-box;
+}
+.sso-btn:hover {
+  background: #2c5282;
+}
 
 .auth-footer { margin-top: 1.5rem; font-size: 0.85rem; }
 .auth-footer span, .forgot-link { color: #42b983; cursor: pointer; font-weight: 600; }

@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime
 import re
+from functools import wraps
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
@@ -35,6 +36,64 @@ else:
 
 db.init_app(app)
 migrate = Migrate(app, db)
+
+def get_request_identity():
+    email = request.headers.get('X-Forwarded-Email')
+    username = request.headers.get('X-Forwarded-Preferred-Username') or request.headers.get('X-Forwarded-User')
+    groups_header = request.headers.get('X-Forwarded-Groups', '')
+    groups = [g.strip() for g in groups_header.split(',') if g.strip()]
+
+    # Fallback per ambiente di sviluppo locale se non dietro proxy
+    if not email and os.environ.get('FLASK_ENV') == 'development' and not app.config.get('TESTING'):
+        email = os.environ.get('DEV_AUTH_USER', 'dev@example.com')
+        username = username or 'dev'
+        groups = [os.environ.get('DEV_AUTH_ROLE', 'Admin')]
+
+    return email, username, groups
+
+def require_auth(roles=None):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            email, _, _ = get_request_identity()
+            if not email:
+                return jsonify({"error": "Unauthorized"}), 401
+            user = User.query.filter_by(email=email).first()
+            if not user:
+                return jsonify({"error": "User not registered"}), 401
+            if roles and user.role not in roles:
+                return jsonify({"error": "Forbidden: insufficient permissions"}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+@app.route('/api/me', methods=['GET'])
+def get_me():
+    email, username, groups = get_request_identity()
+    if not email:
+        return jsonify({"authenticated": False, "error": "No identity found"}), 401
+
+    username = username or email.split('@')[0]
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        is_admin = any('admin' in g.lower() for g in groups)
+        role = 'Admin' if is_admin else 'User'
+        user = User(username=username, email=email, role=role, oauth_provider='oidc')
+        db.session.add(user)
+        try:
+            db.session.commit()
+            broadcast_users()
+        except IntegrityError:
+            db.session.rollback()
+            user = User.query.filter_by(email=email).first()
+
+    return jsonify({
+        "authenticated": True,
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "role": getattr(user, 'role', 'User')
+    }), 200
 
 @app.route('/api/data')
 def get_data():
@@ -210,6 +269,7 @@ def health_check():
     return jsonify(health_status)
 
 @app.route('/api/db-explorer', methods=['GET'])
+@require_auth(roles=['Admin'])
 def db_explorer():
     inspector = inspect(db.engine)
     tables = inspector.get_table_names()
@@ -234,6 +294,7 @@ def db_explorer():
     })
 
 @app.route('/api/db-explorer/<table_name>/data', methods=['GET'])
+@require_auth(roles=['Admin'])
 def get_table_data(table_name):
     inspector = inspect(db.engine)
     if table_name not in inspector.get_table_names():

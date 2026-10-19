@@ -11,11 +11,14 @@
       </div>
 
       <div class="nav-right">
-        <div class="user-menu">
+        <div class="user-menu" v-if="isLoggedIn">
           <router-link to="/settings" class="username-link">
-            <span class="user-icon">👤</span> {{ currentUser }}
+            <span class="user-icon">👤</span> {{ currentUser }} <span v-if="userRole" class="role-badge">[{{ userRole }}]</span>
           </router-link>
           <button @click="handleLogout" class="logout-btn">Logout</button>
+        </div>
+        <div class="login-prompt" v-else>
+          <a href="/oauth2/start?rd=/dashboard" class="login-link">Accedi</a>
         </div>
       </div>
     </div>
@@ -27,37 +30,62 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const route = useRoute()
 const isLoggedIn = ref(false)
 const currentUser = ref('')
+const userRole = ref('')
 
 onUnmounted(() => {
-  // Clean up listener to prevent memory leaks
-  window.removeEventListener('auth-change', checkAuth);
-});
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('auth-change', checkAuth)
+  }
+})
 
-const checkAuth = () => {
-  const session = localStorage.getItem('user_session')
+const checkAuth = async () => {
+  try {
+    const res = await fetch('/api/me')
+    if (res.ok) {
+      const data = await res.json()
+      if (data.authenticated) {
+        isLoggedIn.value = true
+        currentUser.value = data.username || data.email
+        userRole.value = data.role || 'User'
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem('user_session', currentUser.value)
+        }
+        return
+      }
+    }
+  } catch (err) {
+    // Ignore fetch error
+  }
+
+  const session = (typeof window !== 'undefined' && window.localStorage) 
+    ? window.localStorage.getItem('user_session') 
+    : null
   isLoggedIn.value = !!session
   currentUser.value = session || ''
 }
 
-// onMounted(checkAuth)
-// watch(() => route.path, checkAuth)
 onMounted(() => {
-  checkAuth();
-  // Listen for the login event
-  window.addEventListener('auth-change', checkAuth);
-});
+  checkAuth()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('auth-change', checkAuth)
+  }
+})
 
 const handleLogout = () => {
-  localStorage.removeItem('user_session')
-  checkAuth()
-  router.push('/auth')
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.removeItem('user_session')
+  }
+  isLoggedIn.value = false
+  currentUser.value = ''
+  if (typeof window !== 'undefined' && window.location) {
+    window.location.href = '/oauth2/sign_out?rd=/'
+  }
 }
 </script>
 

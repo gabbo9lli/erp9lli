@@ -48,7 +48,12 @@ def test_login_endpoint(client):
     assert res.get_json()['user'] == 'loginuser@example.com'
 
 def test_db_explorer_tables(client):
-    res = client.get('/api/db-explorer')
+    admin_headers = {
+        'X-Forwarded-Email': 'admin@example.com',
+        'X-Forwarded-Groups': 'admin'
+    }
+    client.get('/api/me', headers=admin_headers)
+    res = client.get('/api/db-explorer', headers=admin_headers)
     assert res.status_code == 200
     data = res.get_json()
     assert 'tables' in data
@@ -56,13 +61,18 @@ def test_db_explorer_tables(client):
     assert 'user' in table_names
 
 def test_db_explorer_sqli_protection(client):
+    admin_headers = {
+        'X-Forwarded-Email': 'admin@example.com',
+        'X-Forwarded-Groups': 'admin'
+    }
+    client.get('/api/me', headers=admin_headers)
     # Invalid table should return 404
-    res = client.get('/api/db-explorer/fake_table_not_exists/data')
+    res = client.get('/api/db-explorer/fake_table_not_exists/data', headers=admin_headers)
     assert res.status_code == 404
     assert res.get_json()['error'] == 'Table not found'
 
     # Injection string should be safely rejected with 404
-    sqli_res = client.get('/api/db-explorer/user;DROP%20TABLE%20user;/data')
+    sqli_res = client.get('/api/db-explorer/user;DROP%20TABLE%20user;/data', headers=admin_headers)
     assert sqli_res.status_code == 404
 
 def test_password_reset_flow(client):

@@ -1,39 +1,99 @@
 version: '3.8'
 
 services:
-  proxy:
+  traefik:
+    image: traefik:v3.1
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.myresolver.acme.storage=/etc/traefik/acme/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_acme:/etc/traefik/acme
+    networks:
+      - app-network
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    environment:
+      - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+      - OAUTH2_PROXY_UPSTREAMS=http://backend:8000/
+      - OAUTH2_PROXY_PROVIDER=${OAUTH2_PROXY_PROVIDER:-oidc}
+      - OAUTH2_PROXY_CLIENT_ID=${OAUTH2_PROXY_CLIENT_ID:-erp-client}
+      - OAUTH2_PROXY_CLIENT_SECRET=${OAUTH2_PROXY_CLIENT_SECRET:-erp-secret}
+      - OAUTH2_PROXY_OIDC_ISSUER_URL=${OAUTH2_PROXY_OIDC_ISSUER_URL:-https://auth.example.com}
+      - OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET:-12345678901234567890123456789012}
+      - OAUTH2_PROXY_COOKIE_SECURE=${OAUTH2_PROXY_COOKIE_SECURE:-false}
+      - OAUTH2_PROXY_EMAIL_DOMAINS=*
+      - OAUTH2_PROXY_SET_XAUTHREQUEST=true
+      - OAUTH2_PROXY_PASS_ACCESS_TOKEN=true
+      - OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER=true
+      - OAUTH2_PROXY_REVERSE_PROXY=true
+    networks:
+      - app-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.oauth2.rule=PathPrefix(`/oauth2`)"
+      - "traefik.http.routers.oauth2.entrypoints=web,websecure"
+      - "traefik.http.routers.oauth2.service=oauth2-proxy"
+      - "traefik.http.services.oauth2-proxy.loadbalancer.server.port=4180"
+      # Definizione middleware ForwardAuth
+      - "traefik.http.middlewares.oauth-auth.forwardauth.address=http://oauth2-proxy:4180/oauth2/auth"
+      - "traefik.http.middlewares.oauth-auth.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.oauth-auth.forwardauth.authResponseHeaders=X-Forwarded-User,X-Forwarded-Email,X-Forwarded-Preferred-Username,X-Forwarded-Groups"
+      # Definizione middleware ErrorPage per redirect 401
+      - "traefik.http.middlewares.oauth-errors.errors.status=401"
+      - "traefik.http.middlewares.oauth-errors.errors.service=oauth2-proxy"
+      - "traefik.http.middlewares.oauth-errors.errors.query=/oauth2/start?rd={url}"
+
+  frontend-static:
     build:
       context: ./proxy
       dockerfile: Dockerfile
-    # container_name: production_proxy
     volumes:
-      - vue_static:/usr/share/nginx/html:ro # Read-only access to static files
-    ports:
-      - "8080:80" 
+      - vue_static:/usr/share/nginx/html:ro
     depends_on:
-      - backend
-      - frontend 
+      - frontend
     networks:
       - app-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web,websecure"
+      - "traefik.http.routers.frontend.middlewares=oauth-errors,oauth-auth"
+      - "traefik.http.routers.frontend.service=frontend-static"
+      - "traefik.http.services.frontend-static.loadbalancer.server.port=80"
 
   backend:
     build:
       target: production
-    # container_name: backend_flask_gunicorn_prod
-    expose:
-      - "8000:8000"
     env_file: .env.prod
     restart: always
     depends_on:
       - redis
       - db
+    networks:
+      - app-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=PathPrefix(`/api`)"
+      - "traefik.http.routers.backend.entrypoints=web,websecure"
+      - "traefik.http.routers.backend.middlewares=oauth-errors,oauth-auth"
+      - "traefik.http.routers.backend.service=backend-api"
+      - "traefik.http.services.backend-api.loadbalancer.server.port=8000"
 
   frontend:
     build:
       target: production
-    # container_name: vue_prod
     volumes:
-      - vue_static:/app/dist # Assuming your build output is in /app/dist
+      - vue_static:/app/dist
 
   db:
     environment:
@@ -41,3 +101,4 @@ services:
 
 volumes:
   vue_static:
+  traefik_acme:
