@@ -9,6 +9,7 @@ import ProductCatalog from './components/ProductCatalog.vue'
 import DeliveryNotes from './components/DeliveryNotes.vue'
 import Invoices from './components/Invoices.vue'
 import Accounting from './components/Accounting.vue'
+import Orders from './components/Orders.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -18,6 +19,7 @@ const routes = [
   { path: '/users', component: UserManagement2, meta: { requiresAuth: true } },
   { path: '/partners', component: PartnerManagement, meta: { requiresAuth: true } },
   { path: '/products', component: ProductCatalog, meta: { requiresAuth: true } },
+  { path: '/orders', component: Orders, meta: { requiresAuth: true } },
   { path: '/delivery-notes', component: DeliveryNotes, meta: { requiresAuth: true } },
   { path: '/invoices', component: Invoices, meta: { requiresAuth: true } },
   { path: '/accounting', component: Accounting, meta: { requiresAuth: true } },

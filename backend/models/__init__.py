@@ -10,6 +10,8 @@ from .invoice_installment import InvoiceInstallment
 from .account import Account
 from .journal_entry import JournalEntry
 from .journal_item import JournalItem
+from .customer_order import CustomerOrder
+from .order_item import OrderItem
 
 __all__ = [
     "db",
@@ -24,4 +26,6 @@ __all__ = [
     "Account",
     "JournalEntry",
     "JournalItem",
+    "CustomerOrder",
+    "OrderItem",
 ]

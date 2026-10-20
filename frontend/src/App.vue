@@ -103,60 +103,73 @@
           <q-separator class="q-my-sm" />
 
           <!-- CICLO ATTIVO / VENDITE -->
-          <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
-            Ciclo Attivo (Vendite)
-          </q-item-label>
+          <template v-if="activeModules.orders || activeModules.delivery_notes || activeModules.invoicing">
+            <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
+              Ciclo Attivo (Vendite)
+            </q-item-label>
 
-          <q-item clickable v-ripple to="/delivery-notes" active-class="text-primary bg-blue-1 text-weight-bold">
-            <q-item-section avatar>
-              <q-icon name="local_shipping" />
-            </q-item-section>
-            <q-item-section>Bolle (DDT)</q-item-section>
-          </q-item>
+            <q-item v-if="activeModules.orders" clickable v-ripple to="/orders" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="shopping_cart" />
+              </q-item-section>
+              <q-item-section>Ordini Clienti</q-item-section>
+            </q-item>
 
-          <q-item clickable v-ripple to="/invoices" active-class="text-primary bg-blue-1 text-weight-bold">
-            <q-item-section avatar>
-              <q-icon name="receipt_long" />
-            </q-item-section>
-            <q-item-section>Fatture & Scadenzario</q-item-section>
-          </q-item>
+            <q-item v-if="activeModules.delivery_notes" clickable v-ripple to="/delivery-notes" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="local_shipping" />
+              </q-item-section>
+              <q-item-section>Bolle (DDT)</q-item-section>
+            </q-item>
 
-          <q-separator class="q-my-sm" />
+            <q-item v-if="activeModules.invoicing" clickable v-ripple to="/invoices" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="receipt_long" />
+              </q-item-section>
+              <q-item-section>Fatture & Scadenzario</q-item-section>
+            </q-item>
+
+            <q-separator class="q-my-sm" />
+          </template>
 
           <!-- AMMINISTRAZIONE & CONTABILITÀ -->
-          <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
-            Contabilità Generale
-          </q-item-label>
+          <template v-if="activeModules.accounting">
+            <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
+              Contabilità Generale
+            </q-item-label>
 
-          <q-item clickable v-ripple to="/accounting" active-class="text-primary bg-blue-1 text-weight-bold">
-            <q-item-section avatar>
-              <q-icon name="account_balance" />
-            </q-item-section>
-            <q-item-section>Partita Doppia & Bilancio</q-item-section>
-          </q-item>
+            <q-item clickable v-ripple to="/accounting" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="account_balance" />
+              </q-item-section>
+              <q-item-section>Partita Doppia & Bilancio</q-item-section>
+            </q-item>
 
-          <q-separator class="q-my-sm" />
+            <q-separator class="q-my-sm" />
+          </template>
 
           <!-- ANAGRAFICHE CORE -->
-          <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
-            Anagrafiche Core
-          </q-item-label>
+          <template v-if="activeModules.anagrafiche">
+            <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
+              Anagrafiche Core
+            </q-item-label>
 
-          <q-item clickable v-ripple to="/partners" active-class="text-primary bg-blue-1 text-weight-bold">
-            <q-item-section avatar>
-              <q-icon name="business" />
-            </q-item-section>
-            <q-item-section>Soggetti (Clienti/Fornitori)</q-item-section>
-          </q-item>
+            <q-item clickable v-ripple to="/partners" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="business" />
+              </q-item-section>
+              <q-item-section>Soggetti (Clienti/Fornitori)</q-item-section>
+            </q-item>
 
-          <q-item clickable v-ripple to="/products" active-class="text-primary bg-blue-1 text-weight-bold">
-            <q-item-section avatar>
-              <q-icon name="eco" />
-            </q-item-section>
-            <q-item-section>Articoli Biologici</q-item-section>
-          </q-item>
+            <q-item clickable v-ripple to="/products" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="eco" />
+              </q-item-section>
+              <q-item-section>Articoli Biologici</q-item-section>
+            </q-item>
 
-          <q-separator class="q-my-sm" />
+            <q-separator class="q-my-sm" />
+          </template>
 
           <!-- SISTEMA & STRUMENTI -->
           <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
@@ -213,6 +226,25 @@ const currentUser = ref('')
 const userRole = ref('')
 const leftDrawerOpen = ref(true)
 
+const activeModules = ref({
+  anagrafiche: true,
+  orders: true,
+  delivery_notes: true,
+  invoicing: true,
+  accounting: true
+})
+
+const fetchModules = async () => {
+  try {
+    const res = await fetch('/api/modules')
+    if (res.ok) {
+      activeModules.value = await res.json()
+    }
+  } catch (err) {
+    // Mantieni default attivi
+  }
+}
+
 onUnmounted(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('auth-change', checkAuth)
@@ -247,6 +279,7 @@ const checkAuth = async () => {
 
 onMounted(() => {
   checkAuth()
+  fetchModules()
   if (typeof window !== 'undefined') {
     window.addEventListener('auth-change', checkAuth)
   }
