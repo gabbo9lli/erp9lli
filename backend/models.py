@@ -199,3 +199,107 @@ class DeliveryNoteItem(db.Model):
             "data_scadenza": self.data_scadenza.isoformat() if self.data_scadenza else None,
             "in_scadenza": self.product.in_scadenza if self.product else False
         }
+
+class Invoice(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    numero = db.Column(db.Integer, nullable=False)
+    anno = db.Column(db.Integer, nullable=False)
+    numero_completo = db.Column(db.String(30), unique=True, nullable=False, index=True)
+    tipo_documento = db.Column(db.String(10), nullable=False, default='TD24') # TD24 differita, TD01 immediata
+    data_documento = db.Column(db.Date, nullable=False, default=date.today)
+    cliente_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=False)
+    condizioni_pagamento = db.Column(db.String(50), nullable=False, default='30gg fm')
+    esigibilita_iva = db.Column(db.String(1), nullable=False, default='I') # I=immediata, D=differita, S=split payment
+    totale_imponibile = db.Column(db.Float, nullable=False, default=0.0)
+    totale_imposta = db.Column(db.Float, nullable=False, default=0.0)
+    totale_fattura = db.Column(db.Float, nullable=False, default=0.0)
+    castelletto_iva = db.Column(db.JSON, nullable=True)
+    stato = db.Column(db.String(20), nullable=False, default='emessa') # bozza, emessa, inviata_sdi, saldata
+    note = db.Column(db.Text, nullable=True)
+
+    cliente = db.relationship('Partner', backref='fatture')
+    items = db.relationship('InvoiceItem', backref='invoice', cascade='all, delete-orphan', passive_deletes=True)
+    installments = db.relationship('InvoiceInstallment', backref='invoice', cascade='all, delete-orphan', passive_deletes=True, order_by='InvoiceInstallment.numero_rata')
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "numero": self.numero,
+            "anno": self.anno,
+            "numero_completo": self.numero_completo,
+            "tipo_documento": self.tipo_documento,
+            "data_documento": self.data_documento.isoformat() if self.data_documento else None,
+            "cliente_id": self.cliente_id,
+            "cliente": self.cliente.to_dict() if self.cliente else None,
+            "condizioni_pagamento": self.condizioni_pagamento,
+            "esigibilita_iva": self.esigibilita_iva,
+            "totale_imponibile": self.totale_imponibile,
+            "totale_imposta": self.totale_imposta,
+            "totale_fattura": self.totale_fattura,
+            "castelletto_iva": self.castelletto_iva,
+            "stato": self.stato,
+            "note": self.note,
+            "items": [item.to_dict() for item in self.items],
+            "installments": [inst.to_dict() for inst in self.installments]
+        }
+
+class InvoiceItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey('invoice.id', ondelete='CASCADE'), nullable=False)
+    delivery_note_id = db.Column(db.Integer, db.ForeignKey('delivery_note.id'), nullable=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
+    descrizione = db.Column(db.String(200), nullable=False)
+    unita_misura = db.Column(db.String(10), nullable=False, default='KG')
+    colli = db.Column(db.Integer, nullable=False, default=1)
+    quantita = db.Column(db.Float, nullable=False)
+    prezzo_unitario = db.Column(db.Float, nullable=False, default=0.0)
+    aliquota_iva = db.Column(db.Integer, nullable=False, default=4)
+    imponibile_riga = db.Column(db.Float, nullable=False, default=0.0)
+    lotto = db.Column(db.String(50), nullable=True)
+    data_scadenza = db.Column(db.Date, nullable=True)
+
+    product = db.relationship('Product')
+    delivery_note = db.relationship('DeliveryNote')
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "invoice_id": self.invoice_id,
+            "delivery_note_id": self.delivery_note_id,
+            "delivery_note_numero": self.delivery_note.numero_completo if self.delivery_note else None,
+            "product_id": self.product_id,
+            "product_codice": self.product.codice if self.product else None,
+            "descrizione": self.descrizione,
+            "unita_misura": self.unita_misura,
+            "colli": self.colli,
+            "quantita": self.quantita,
+            "prezzo_unitario": self.prezzo_unitario,
+            "aliquota_iva": self.aliquota_iva,
+            "imponibile_riga": self.imponibile_riga,
+            "lotto": self.lotto,
+            "data_scadenza": self.data_scadenza.isoformat() if self.data_scadenza else None
+        }
+
+class InvoiceInstallment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey('invoice.id', ondelete='CASCADE'), nullable=False)
+    numero_rata = db.Column(db.Integer, nullable=False, default=1)
+    totale_rate = db.Column(db.Integer, nullable=False, default=1)
+    data_scadenza = db.Column(db.Date, nullable=False)
+    importo = db.Column(db.Float, nullable=False)
+    stato = db.Column(db.String(20), nullable=False, default='aperta') # aperta, incassata, scaduta
+    data_incasso = db.Column(db.Date, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "invoice_id": self.invoice_id,
+            "numero_rata": self.numero_rata,
+            "totale_rate": self.totale_rate,
+            "data_scadenza": self.data_scadenza.isoformat() if self.data_scadenza else None,
+            "importo": self.importo,
+            "stato": self.stato,
+            "data_incasso": self.data_incasso.isoformat() if self.data_incasso else None,
+            "invoice_numero": self.invoice.numero_completo if self.invoice else None,
+            "cliente_nome": self.invoice.cliente.ragione_sociale if self.invoice and self.invoice.cliente else None
+        }

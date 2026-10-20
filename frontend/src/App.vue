@@ -9,6 +9,7 @@
             <router-link to="/partners" class="nav-item">Soggetti</router-link>
             <router-link to="/products" class="nav-item">Articoli</router-link>
             <router-link to="/delivery-notes" class="nav-item">Bolle (DDT)</router-link>
+            <router-link to="/invoices" class="nav-item">Fatture</router-link>
             <router-link to="/database" class="nav-item">Database</router-link>
           </template>
       </div>

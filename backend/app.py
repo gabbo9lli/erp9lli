@@ -6,10 +6,11 @@ from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager, create_access_token
 from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
-from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment
 from sqlalchemy import text
 from sqlalchemy import inspect, func
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+import calendar
 import re
 from functools import wraps
 from flask_socketio import SocketIO, emit
@@ -725,6 +726,357 @@ def confirm_delivery_note(did):
     try:
         db.session.commit()
         return jsonify(ddt.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+# ==========================================
+# FATTURAZIONE ATTIVA & SCADENZARIO
+# ==========================================
+
+def get_next_invoice_number(anno):
+    max_num = db.session.query(func.max(Invoice.numero)).filter_by(anno=anno).scalar()
+    return (max_num or 0) + 1
+
+def calculate_installments(totale_fattura, data_documento, condizioni):
+    cond = (condizioni or '30gg fm').lower()
+    
+    if '30/60/90' in cond:
+        giorni_lista = [30, 60, 90]
+    elif '30/60' in cond:
+        giorni_lista = [30, 60]
+    elif '60/90' in cond:
+        giorni_lista = [60, 90]
+    elif '60' in cond:
+        giorni_lista = [60]
+    elif '90' in cond:
+        giorni_lista = [90]
+    elif 'vista' in cond or 'contanti' in cond or 'immediato' in cond:
+        giorni_lista = [0]
+    else:
+        giorni_lista = [30]
+
+    totale_rate = len(giorni_lista)
+    base_importo = round(totale_fattura / totale_rate, 2)
+    rate = []
+    somma_rate = 0.0
+
+    for idx, giorni in enumerate(giorni_lista):
+        if giorni == 0:
+            scadenza = data_documento
+        elif 'fm' in cond or 'fine mese' in cond:
+            target_date = data_documento + timedelta(days=giorni)
+            _, last_day = calendar.monthrange(target_date.year, target_date.month)
+            scadenza = date(target_date.year, target_date.month, last_day)
+        else:
+            scadenza = data_documento + timedelta(days=giorni)
+
+        if idx == totale_rate - 1:
+            # Ultima rata: pareggio al centesimo per quadratura contabile perfetta
+            importo_rata = round(totale_fattura - somma_rate, 2)
+        else:
+            importo_rata = base_importo
+            somma_rate += importo_rata
+
+        rate.append({
+            "numero_rata": idx + 1,
+            "totale_rate": totale_rate,
+            "data_scadenza": scadenza,
+            "importo": importo_rata,
+            "stato": "aperta"
+        })
+
+    return rate
+
+@app.route('/api/delivery-notes/unbilled', methods=['GET'])
+@require_auth()
+def get_unbilled_delivery_notes():
+    query = DeliveryNote.query.filter_by(stato='confermato')
+    cliente_id = request.args.get('cliente_id')
+    if cliente_id:
+        query = query.filter_by(cliente_id=int(cliente_id))
+    ddts = query.order_by(DeliveryNote.data_documento.asc(), DeliveryNote.numero.asc()).all()
+    return jsonify([d.to_dict() for d in ddts]), 200
+
+@app.route('/api/invoices/from-ddt', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_invoice_from_ddt():
+    data = request.get_json() or {}
+    cliente_id = data.get('cliente_id')
+    ddt_ids = data.get('ddt_ids', [])
+    if not cliente_id or not ddt_ids:
+        return jsonify({"error": "cliente_id e ddt_ids sono obbligatori"}), 400
+
+    cliente = db.session.get(Partner, cliente_id)
+    if not cliente:
+        return jsonify({"error": "Cliente non trovato"}), 404
+
+    ddts = DeliveryNote.query.filter(DeliveryNote.id.in_(ddt_ids)).all()
+    if len(ddts) != len(ddt_ids):
+        return jsonify({"error": "Uno o più DDT non trovati"}), 404
+
+    for d in ddts:
+        if d.cliente_id != cliente.id:
+            return jsonify({"error": f"DDT {d.numero_completo} non appartiene a questo cliente"}), 400
+        if d.stato != 'confermato':
+            return jsonify({"error": f"DDT {d.numero_completo} non è in stato confermato (stato: {d.stato})"}), 400
+
+    doc_date_str = data.get('data_documento')
+    doc_date = datetime.strptime(doc_date_str, '%Y-%m-%d').date() if doc_date_str else date.today()
+    anno = doc_date.year
+    numero = get_next_invoice_number(anno)
+    numero_completo = f"FT-{anno}-{numero:04d}"
+
+    condizioni = data.get('condizioni_pagamento', cliente.condizioni_pagamento or '30gg fm')
+
+    totale_imponibile = 0.0
+    totale_imposta = 0.0
+    castelletto = {}
+    invoice_items = []
+
+    for ddt in ddts:
+        for item in ddt.items:
+            imp_riga = round(item.quantita * item.prezzo_unitario, 2)
+            iva_riga = round(imp_riga * (item.aliquota_iva / 100.0), 2)
+            totale_imponibile += imp_riga
+            totale_imposta += iva_riga
+
+            aliquota_key = str(item.aliquota_iva)
+            if aliquota_key not in castelletto:
+                castelletto[aliquota_key] = {"imponibile": 0.0, "imposta": 0.0}
+            castelletto[aliquota_key]["imponibile"] = round(castelletto[aliquota_key]["imponibile"] + imp_riga, 2)
+            castelletto[aliquota_key]["imposta"] = round(castelletto[aliquota_key]["imposta"] + iva_riga, 2)
+
+            inv_item = InvoiceItem(
+                delivery_note_id=ddt.id,
+                product_id=item.product_id,
+                descrizione=item.descrizione,
+                unita_misura=item.unita_misura,
+                colli=item.colli,
+                quantita=item.quantita,
+                prezzo_unitario=item.prezzo_unitario,
+                aliquota_iva=item.aliquota_iva,
+                imponibile_riga=imp_riga,
+                lotto=item.lotto,
+                data_scadenza=item.data_scadenza
+            )
+            invoice_items.append(inv_item)
+
+    totale_imponibile = round(totale_imponibile, 2)
+    totale_imposta = round(totale_imposta, 2)
+    totale_fattura = round(totale_imponibile + totale_imposta, 2)
+
+    rate_data = calculate_installments(totale_fattura, doc_date, condizioni)
+    installments = [
+        InvoiceInstallment(
+            numero_rata=r["numero_rata"],
+            totale_rate=r["totale_rate"],
+            data_scadenza=r["data_scadenza"],
+            importo=r["importo"],
+            stato="aperta"
+        ) for r in rate_data
+    ]
+
+    invoice = Invoice(
+        numero=numero,
+        anno=anno,
+        numero_completo=numero_completo,
+        tipo_documento='TD24',
+        data_documento=doc_date,
+        cliente_id=cliente.id,
+        condizioni_pagamento=condizioni,
+        esigibilita_iva=data.get('esigibilita_iva', 'I'),
+        totale_imponibile=totale_imponibile,
+        totale_imposta=totale_imposta,
+        totale_fattura=totale_fattura,
+        castelletto_iva=castelletto,
+        stato='emessa',
+        note=data.get('note'),
+        items=invoice_items,
+        installments=installments
+    )
+    db.session.add(invoice)
+
+    # Aggiorna lo stato dei DDT inclusi a 'fatturato'
+    for ddt in ddts:
+        ddt.stato = 'fatturato'
+
+    try:
+        db.session.commit()
+        return jsonify(invoice.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/invoices', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_invoice_direct():
+    data = request.get_json() or {}
+    cliente_id = data.get('cliente_id')
+    if not cliente_id:
+        return jsonify({"error": "cliente_id is required"}), 400
+
+    cliente = db.session.get(Partner, cliente_id)
+    if not cliente:
+        return jsonify({"error": "Cliente non trovato"}), 404
+
+    items_data = data.get('items', [])
+    if not items_data:
+        return jsonify({"error": "At least one item is required"}), 400
+
+    doc_date_str = data.get('data_documento')
+    doc_date = datetime.strptime(doc_date_str, '%Y-%m-%d').date() if doc_date_str else date.today()
+    anno = doc_date.year
+    numero = get_next_invoice_number(anno)
+    numero_completo = f"FT-{anno}-{numero:04d}"
+
+    condizioni = data.get('condizioni_pagamento', cliente.condizioni_pagamento or '30gg fm')
+
+    totale_imponibile = 0.0
+    totale_imposta = 0.0
+    castelletto = {}
+    invoice_items = []
+
+    for item in items_data:
+        prod_id = item.get('product_id')
+        product = db.session.get(Product, prod_id) if prod_id else None
+        descrizione = item.get('descrizione', product.descrizione if product else 'Articolo')
+        unita_misura = item.get('unita_misura', product.unita_misura if product else 'KG')
+        colli = int(item.get('colli', 1))
+        quantita = float(item.get('quantita', 1.0))
+        prezzo_unitario = float(item.get('prezzo_unitario', product.prezzo_vendita if product else 0.0))
+        aliquota_iva = int(item.get('aliquota_iva', product.aliquota_iva if product else 4))
+
+        imp_riga = round(quantita * prezzo_unitario, 2)
+        iva_riga = round(imp_riga * (aliquota_iva / 100.0), 2)
+        totale_imponibile += imp_riga
+        totale_imposta += iva_riga
+
+        aliquota_key = str(aliquota_iva)
+        if aliquota_key not in castelletto:
+            castelletto[aliquota_key] = {"imponibile": 0.0, "imposta": 0.0}
+        castelletto[aliquota_key]["imponibile"] = round(castelletto[aliquota_key]["imponibile"] + imp_riga, 2)
+        castelletto[aliquota_key]["imposta"] = round(castelletto[aliquota_key]["imposta"] + iva_riga, 2)
+
+        inv_item = InvoiceItem(
+            product_id=prod_id,
+            descrizione=descrizione,
+            unita_misura=unita_misura,
+            colli=colli,
+            quantita=quantita,
+            prezzo_unitario=prezzo_unitario,
+            aliquota_iva=aliquota_iva,
+            imponibile_riga=imp_riga,
+            lotto=item.get('lotto'),
+            data_scadenza=datetime.strptime(item.get('data_scadenza'), '%Y-%m-%d').date() if item.get('data_scadenza') else None
+        )
+        invoice_items.append(inv_item)
+
+    totale_imponibile = round(totale_imponibile, 2)
+    totale_imposta = round(totale_imposta, 2)
+    totale_fattura = round(totale_imponibile + totale_imposta, 2)
+
+    rate_data = calculate_installments(totale_fattura, doc_date, condizioni)
+    installments = [
+        InvoiceInstallment(
+            numero_rata=r["numero_rata"],
+            totale_rate=r["totale_rate"],
+            data_scadenza=r["data_scadenza"],
+            importo=r["importo"],
+            stato="aperta"
+        ) for r in rate_data
+    ]
+
+    invoice = Invoice(
+        numero=numero,
+        anno=anno,
+        numero_completo=numero_completo,
+        tipo_documento='TD01',
+        data_documento=doc_date,
+        cliente_id=cliente.id,
+        condizioni_pagamento=condizioni,
+        esigibilita_iva=data.get('esigibilita_iva', 'I'),
+        totale_imponibile=totale_imponibile,
+        totale_imposta=totale_imposta,
+        totale_fattura=totale_fattura,
+        castelletto_iva=castelletto,
+        stato='emessa',
+        note=data.get('note'),
+        items=invoice_items,
+        installments=installments
+    )
+    db.session.add(invoice)
+    try:
+        db.session.commit()
+        return jsonify(invoice.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/invoices', methods=['GET'])
+@require_auth()
+def get_invoices():
+    query = Invoice.query
+    stato = request.args.get('stato')
+    if stato and stato != 'tutti':
+        query = query.filter_by(stato=stato)
+
+    cliente_id = request.args.get('cliente_id')
+    if cliente_id:
+        query = query.filter_by(cliente_id=int(cliente_id))
+
+    anno = request.args.get('anno')
+    if anno:
+        query = query.filter_by(anno=int(anno))
+
+    search = request.args.get('search')
+    if search:
+        search_filter = f"%{search}%"
+        query = query.join(Invoice.cliente).filter(
+            (Invoice.numero_completo.ilike(search_filter)) |
+            (Partner.ragione_sociale.ilike(search_filter))
+        )
+
+    invoices = query.order_by(Invoice.data_documento.desc(), Invoice.numero.desc()).all()
+    return jsonify([inv.to_dict() for inv in invoices]), 200
+
+@app.route('/api/invoices/<int:iid>', methods=['GET'])
+@require_auth()
+def get_invoice_detail(iid):
+    invoice = db.session.get(Invoice, iid)
+    if not invoice:
+        return jsonify({"error": "Invoice not found"}), 404
+    return jsonify(invoice.to_dict()), 200
+
+@app.route('/api/installments', methods=['GET'])
+@require_auth()
+def get_installments():
+    query = InvoiceInstallment.query
+    stato = request.args.get('stato')
+    if stato and stato != 'tutti':
+        query = query.filter_by(stato=stato)
+
+    installments = query.order_by(InvoiceInstallment.data_scadenza.asc()).all()
+    return jsonify([inst.to_dict() for inst in installments]), 200
+
+@app.route('/api/installments/<int:inst_id>/pay', methods=['POST'])
+@require_auth(roles=['Admin'])
+def pay_installment(inst_id):
+    inst = db.session.get(InvoiceInstallment, inst_id)
+    if not inst:
+        return jsonify({"error": "Installment not found"}), 404
+
+    inst.stato = 'incassata'
+    inst.data_incasso = date.today()
+
+    # Controlla se tutte le rate della fattura sono incassate
+    invoice = inst.invoice
+    if all(i.stato == 'incassata' for i in invoice.installments):
+        invoice.stato = 'saldata'
+
+    try:
+        db.session.commit()
+        return jsonify(inst.to_dict()), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
