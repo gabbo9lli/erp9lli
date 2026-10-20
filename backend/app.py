@@ -6,10 +6,10 @@ from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager, create_access_token
 from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
-from models import db, User, Partner, Product
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem
 from sqlalchemy import text
 from sqlalchemy import inspect, func
-from datetime import datetime
+from datetime import datetime, date
 import re
 from functools import wraps
 from flask_socketio import SocketIO, emit
@@ -523,6 +523,208 @@ def delete_product(pid):
     try:
         db.session.commit()
         return jsonify({"message": "Product deactivated"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+# ==========================================
+# BOLLETTAZIONE / DDT (DOCUMENTI DI TRASPORTO)
+# ==========================================
+
+def get_next_ddt_number(anno):
+    max_num = db.session.query(func.max(DeliveryNote.numero)).filter_by(anno=anno).scalar()
+    return (max_num or 0) + 1
+
+@app.route('/api/delivery-notes', methods=['GET'])
+@require_auth()
+def get_delivery_notes():
+    query = DeliveryNote.query
+    stato = request.args.get('stato')
+    if stato and stato != 'tutti':
+        query = query.filter_by(stato=stato)
+
+    cliente_id = request.args.get('cliente_id')
+    if cliente_id:
+        query = query.filter_by(cliente_id=int(cliente_id))
+
+    anno = request.args.get('anno')
+    if anno:
+        query = query.filter_by(anno=int(anno))
+
+    search = request.args.get('search')
+    if search:
+        search_filter = f"%{search}%"
+        query = query.join(DeliveryNote.cliente).filter(
+            (DeliveryNote.numero_completo.ilike(search_filter)) |
+            (Partner.ragione_sociale.ilike(search_filter))
+        )
+
+    ddts = query.order_by(DeliveryNote.data_documento.desc(), DeliveryNote.numero.desc()).all()
+    return jsonify([d.to_dict() for d in ddts]), 200
+
+@app.route('/api/delivery-notes/<int:did>', methods=['GET'])
+@require_auth()
+def get_delivery_note_detail(did):
+    ddt = db.session.get(DeliveryNote, did)
+    if not ddt:
+        return jsonify({"error": "Delivery note not found"}), 404
+    return jsonify(ddt.to_dict()), 200
+
+@app.route('/api/delivery-notes', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_delivery_note():
+    data = request.get_json() or {}
+    cliente_id = data.get('cliente_id')
+    if not cliente_id:
+        return jsonify({"error": "cliente_id is required"}), 400
+
+    cliente = db.session.get(Partner, cliente_id)
+    if not cliente:
+        return jsonify({"error": "Cliente partner not found"}), 400
+
+    items_data = data.get('items', [])
+    if not items_data:
+        return jsonify({"error": "At least one item is required in delivery note"}), 400
+
+    doc_date_str = data.get('data_documento')
+    if doc_date_str:
+        doc_date = datetime.strptime(doc_date_str, '%Y-%m-%d').date()
+    else:
+        doc_date = date.today()
+
+    anno = doc_date.year
+    numero = get_next_ddt_number(anno)
+    numero_completo = f"DDT-{anno}-{numero:04d}"
+
+    colli_totali = 0
+    peso_totale_netto = 0.0
+    peso_totale_lordo = 0.0
+    totale_imponibile = 0.0
+
+    ddt_items = []
+    for idx, item in enumerate(items_data):
+        prod_id = item.get('product_id')
+        if not prod_id:
+            return jsonify({"error": f"Item {idx+1}: product_id is required"}), 400
+        product = db.session.get(Product, prod_id)
+        if not product:
+            return jsonify({"error": f"Item {idx+1}: product not found"}), 400
+
+        colli = int(item.get('colli', 1))
+        quantita = float(item.get('quantita', 1.0))
+        prezzo_unitario = float(item.get('prezzo_unitario', product.prezzo_vendita))
+        aliquota_iva = int(item.get('aliquota_iva', product.aliquota_iva))
+        descrizione = item.get('descrizione', product.descrizione)
+        unita_misura = item.get('unita_misura', product.unita_misura)
+        lotto = item.get('lotto')
+        data_scadenza_str = item.get('data_scadenza')
+
+        # Controllo tracciabilità biologica (ReteBio standard)
+        if product.in_scadenza:
+            if not lotto or not data_scadenza_str:
+                return jsonify({"error": f"Prodotto biologico in scadenza '{product.descrizione}': lotto e data di scadenza sono obbligatori!"}), 400
+
+        data_scadenza = datetime.strptime(data_scadenza_str, '%Y-%m-%d').date() if data_scadenza_str else None
+
+        colli_totali += colli
+        if unita_misura.upper() == 'KG':
+            peso_netto_riga = quantita
+        else:
+            peso_netto_riga = quantita * (product.peso_netto or 1.0)
+        peso_totale_netto += peso_netto_riga
+        peso_totale_lordo += peso_netto_riga + (colli * (product.tara or 0.0))
+        totale_imponibile += (quantita * prezzo_unitario)
+
+        ddt_item = DeliveryNoteItem(
+            product_id=product.id,
+            descrizione=descrizione,
+            unita_misura=unita_misura,
+            colli=colli,
+            quantita=quantita,
+            prezzo_unitario=prezzo_unitario,
+            aliquota_iva=aliquota_iva,
+            lotto=lotto,
+            data_scadenza=data_scadenza
+        )
+        ddt_items.append(ddt_item)
+
+    ddt = DeliveryNote(
+        numero=numero,
+        anno=anno,
+        numero_completo=numero_completo,
+        data_documento=doc_date,
+        cliente_id=cliente.id,
+        vettore_id=data.get('vettore_id'),
+        causale_trasporto=data.get('causale_trasporto', 'Vendita'),
+        porto=data.get('porto', 'Franco'),
+        aspetto_beni=data.get('aspetto_beni', 'Colli'),
+        colli_totali=colli_totali,
+        peso_totale_netto=round(peso_totale_netto, 2),
+        peso_totale_lordo=round(peso_totale_lordo, 2),
+        totale_imponibile=round(totale_imponibile, 2),
+        stato='bozza',
+        note=data.get('note'),
+        items=ddt_items
+    )
+    db.session.add(ddt)
+    try:
+        db.session.commit()
+        return jsonify(ddt.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/delivery-notes/<int:did>', methods=['PUT'])
+@require_auth(roles=['Admin'])
+def update_delivery_note(did):
+    ddt = db.session.get(DeliveryNote, did)
+    if not ddt:
+        return jsonify({"error": "Delivery note not found"}), 404
+    if ddt.stato != 'bozza':
+        return jsonify({"error": f"Impossibile modificare un DDT in stato '{ddt.stato}'"}), 400
+
+    data = request.get_json() or {}
+    for key in ('vettore_id', 'causale_trasporto', 'porto', 'aspetto_beni', 'note'):
+        if key in data:
+            setattr(ddt, key, data[key])
+
+    try:
+        db.session.commit()
+        return jsonify(ddt.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/delivery-notes/<int:did>', methods=['DELETE'])
+@require_auth(roles=['Admin'])
+def delete_delivery_note(did):
+    ddt = db.session.get(DeliveryNote, did)
+    if not ddt:
+        return jsonify({"error": "Delivery note not found"}), 404
+    if ddt.stato != 'bozza':
+        return jsonify({"error": f"Impossibile eliminare un DDT in stato '{ddt.stato}'"}), 400
+
+    try:
+        db.session.delete(ddt)
+        db.session.commit()
+        return jsonify({"message": "Delivery note deleted"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/delivery-notes/<int:did>/confirm', methods=['POST'])
+@require_auth(roles=['Admin'])
+def confirm_delivery_note(did):
+    ddt = db.session.get(DeliveryNote, did)
+    if not ddt:
+        return jsonify({"error": "Delivery note not found"}), 404
+    if not ddt.items:
+        return jsonify({"error": "Impossibile confermare un DDT senza righe merce"}), 400
+
+    ddt.stato = 'confermato'
+    try:
+        db.session.commit()
+        return jsonify(ddt.to_dict()), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400

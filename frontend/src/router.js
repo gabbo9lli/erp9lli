@@ -6,6 +6,7 @@ import DatabaseExplorer from './components/DatabaseExplorer.vue'
 import UserManagement2 from './components/UserManagement2.vue'
 import PartnerManagement from './components/PartnerManagement.vue'
 import ProductCatalog from './components/ProductCatalog.vue'
+import DeliveryNotes from './components/DeliveryNotes.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -15,6 +16,7 @@ const routes = [
   { path: '/users', component: UserManagement2, meta: { requiresAuth: true } },
   { path: '/partners', component: PartnerManagement, meta: { requiresAuth: true } },
   { path: '/products', component: ProductCatalog, meta: { requiresAuth: true } },
+  { path: '/delivery-notes', component: DeliveryNotes, meta: { requiresAuth: true } },
   { path: '/database', component: DatabaseExplorer, meta: { requiresAuth: true } },
   { path: '/settings', component: () => import('./components/Settings.vue'), meta: { requiresAuth: true }},
   { path: '/users2', redirect: '/users' },
