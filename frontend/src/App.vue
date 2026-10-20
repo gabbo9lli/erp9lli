@@ -1,37 +1,206 @@
 <template>
-  <div class="portal">
-    <div class="navbar">
-      <div class="nav-left">
-        <div class="logo">DevPortal</div>
-          <template v-if="isLoggedIn" class="navbar">
-            <router-link to="/healthcheck" class="nav-item">Health Check</router-link>
-            <router-link to="/users" class="nav-item">Users</router-link>
-            <router-link to="/partners" class="nav-item">Soggetti</router-link>
-            <router-link to="/products" class="nav-item">Articoli</router-link>
-            <router-link to="/delivery-notes" class="nav-item">Bolle (DDT)</router-link>
-            <router-link to="/invoices" class="nav-item">Fatture</router-link>
-            <router-link to="/accounting" class="nav-item">Contabilità</router-link>
-            <router-link to="/database" class="nav-item">Database</router-link>
-          </template>
-      </div>
+  <q-layout view="lHh Lpr lFf" class="portal-layout">
+    <!-- BARRA SUPERIORE (HEADER) -->
+    <q-header elevated class="bg-primary text-white">
+      <q-toolbar class="q-px-md">
+        <q-btn
+          v-if="isLoggedIn"
+          flat
+          dense
+          round
+          icon="menu"
+          aria-label="Toggle Menu"
+          @click="leftDrawerOpen = !leftDrawerOpen"
+          class="q-mr-sm"
+        />
 
-      <div class="nav-right">
-        <div class="user-menu" v-if="isLoggedIn">
-          <router-link to="/settings" class="username-link">
-            <span class="user-icon">👤</span> {{ currentUser }} <span v-if="userRole" class="role-badge">[{{ userRole }}]</span>
-          </router-link>
-          <button @click="handleLogout" class="logout-btn">Logout</button>
+        <div class="row items-center q-gutter-xs cursor-pointer" @click="$router.push('/')">
+          <q-avatar size="32px" color="white" text-color="primary" icon="eco" />
+          <div class="q-ml-sm">
+            <div class="text-weight-bolder text-subtitle1 leading-tight">erp9lli</div>
+            <div class="text-caption text-grey-3" style="font-size: 10px; line-height: 1">Gestionale ReteBio</div>
+          </div>
         </div>
-        <div class="login-prompt" v-else>
-          <a href="/oauth2/start?rd=/dashboard" class="login-link">Accedi</a>
-        </div>
-      </div>
-    </div>
 
-    <main class="content">
-      <router-view />
-    </main>
-  </div>
+        <q-space />
+
+        <!-- Toggle Dark Mode -->
+        <q-btn
+          flat
+          round
+          dense
+          :icon="$q?.dark?.isActive ? 'light_mode' : 'dark_mode'"
+          @click="$q?.dark?.toggle()"
+          class="q-mr-sm"
+        >
+          <q-tooltip>{{ $q?.dark?.isActive ? 'Modalità Chiara' : 'Modalità Scura' }}</q-tooltip>
+        </q-btn>
+
+        <!-- Menu Utente Autenticato -->
+        <div v-if="isLoggedIn" class="row items-center q-gutter-sm user-menu">
+          <q-btn flat no-caps class="q-px-sm text-white username-link">
+            <q-avatar size="30px" color="teal-7" text-color="white" icon="person" class="q-mr-xs user-icon" />
+            <div class="text-left">
+              <div class="text-weight-bold text-caption text-white">{{ currentUser }}</div>
+              <div v-if="userRole" class="text-grey-3 text-caption role-badge" style="font-size: 10px">[{{ userRole }}]</div>
+            </div>
+            <q-menu auto-close>
+              <q-list style="min-width: 160px">
+                <q-item clickable to="/settings">
+                  <q-item-section avatar><q-icon name="settings" /></q-item-section>
+                  <q-item-section>Impostazioni</q-item-section>
+                </q-item>
+                <q-separator />
+                <q-item clickable @click="handleLogout" class="text-negative">
+                  <q-item-section avatar><q-icon name="logout" /></q-item-section>
+                  <q-item-section>Esci</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+
+          <q-btn
+            flat
+            round
+            dense
+            icon="logout"
+            color="white"
+            class="logout-btn"
+            @click="handleLogout"
+          >
+            <q-tooltip>Logout</q-tooltip>
+          </q-btn>
+        </div>
+
+        <!-- Link Accesso se anonimo -->
+        <div v-else class="login-prompt">
+          <a href="/oauth2/start?rd=/dashboard" class="login-link text-white text-weight-bold">
+            <q-btn color="secondary" label="Accedi con OIDC / SSO" icon="login" dense no-caps class="q-px-sm" />
+          </a>
+        </div>
+      </q-toolbar>
+    </q-header>
+
+    <!-- SIDEBAR LATERALE (DRAWER) -->
+    <q-drawer
+      v-if="isLoggedIn"
+      v-model="leftDrawerOpen"
+      show-if-above
+      bordered
+      :width="260"
+      class="bg-grey-1"
+    >
+      <q-scroll-area class="fit">
+        <q-list padding class="text-grey-8">
+          <!-- DASHBOARD -->
+          <q-item clickable v-ripple to="/dashboard" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="dashboard" />
+            </q-item-section>
+            <q-item-section>Dashboard</q-item-section>
+          </q-item>
+
+          <q-separator class="q-my-sm" />
+
+          <!-- CICLO ATTIVO / VENDITE -->
+          <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
+            Ciclo Attivo (Vendite)
+          </q-item-label>
+
+          <q-item clickable v-ripple to="/delivery-notes" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="local_shipping" />
+            </q-item-section>
+            <q-item-section>Bolle (DDT)</q-item-section>
+          </q-item>
+
+          <q-item clickable v-ripple to="/invoices" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="receipt_long" />
+            </q-item-section>
+            <q-item-section>Fatture & Scadenzario</q-item-section>
+          </q-item>
+
+          <q-separator class="q-my-sm" />
+
+          <!-- AMMINISTRAZIONE & CONTABILITÀ -->
+          <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
+            Contabilità Generale
+          </q-item-label>
+
+          <q-item clickable v-ripple to="/accounting" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="account_balance" />
+            </q-item-section>
+            <q-item-section>Partita Doppia & Bilancio</q-item-section>
+          </q-item>
+
+          <q-separator class="q-my-sm" />
+
+          <!-- ANAGRAFICHE CORE -->
+          <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
+            Anagrafiche Core
+          </q-item-label>
+
+          <q-item clickable v-ripple to="/partners" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="business" />
+            </q-item-section>
+            <q-item-section>Soggetti (Clienti/Fornitori)</q-item-section>
+          </q-item>
+
+          <q-item clickable v-ripple to="/products" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="eco" />
+            </q-item-section>
+            <q-item-section>Articoli Biologici</q-item-section>
+          </q-item>
+
+          <q-separator class="q-my-sm" />
+
+          <!-- SISTEMA & STRUMENTI -->
+          <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
+            Sistema & Strumenti
+          </q-item-label>
+
+          <q-item clickable v-ripple to="/users" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="people" />
+            </q-item-section>
+            <q-item-section>Gestione Utenti</q-item-section>
+          </q-item>
+
+          <q-item clickable v-ripple to="/database" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="storage" />
+            </q-item-section>
+            <q-item-section>Database Explorer</q-item-section>
+          </q-item>
+
+          <q-item clickable v-ripple to="/healthcheck" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="health_and_safety" />
+            </q-item-section>
+            <q-item-section>Health Check</q-item-section>
+          </q-item>
+
+          <q-item clickable v-ripple to="/settings" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="tune" />
+            </q-item-section>
+            <q-item-section>Impostazioni</q-item-section>
+          </q-item>
+        </q-list>
+      </q-scroll-area>
+    </q-drawer>
+
+    <!-- AREA CONTENUTO PRINCIPALE -->
+    <q-page-container>
+      <main class="content">
+        <router-view />
+      </main>
+    </q-page-container>
+  </q-layout>
 </template>
 
 <script setup>
@@ -42,6 +211,7 @@ const router = useRouter()
 const isLoggedIn = ref(false)
 const currentUser = ref('')
 const userRole = ref('')
+const leftDrawerOpen = ref(true)
 
 onUnmounted(() => {
   if (typeof window !== 'undefined') {
@@ -95,29 +265,13 @@ const handleLogout = () => {
 </script>
 
 <style scoped>
-.navbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 2rem;
-  height: 60px;
-  background: #2c3e50;
-  color: white;
+.portal-layout {
+  min-height: 100vh;
 }
-.nav-left, .nav-right { display: flex; align-items: center; gap: 20px; }
-.nav-item, .username-link {
-  color: #bdc3c7;
-  text-decoration: none;
-  font-size: 0.9rem;
+.content {
+  padding: 0;
 }
-.router-link-active { color: #42b983; font-weight: bold; }
-.user-icon { margin-right: 5px; }
-.logout-btn {
-  background: #e74c3c;
-  border: none;
-  color: white;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
+.leading-tight {
+  line-height: 1.1;
 }
 </style>

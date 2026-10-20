@@ -1,9 +1,10 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import axios from 'axios'
-import { Quasar, Notify, Dialog } from 'quasar' // Import them here
+import { Quasar, Notify, Dialog, Dark } from 'quasar'
 import { router } from './router'
 
+import '@quasar/extras/material-icons/material-icons.css'
 import 'quasar/dist/quasar.css'
 
 const app = createApp(App)
@@ -15,8 +16,9 @@ if (import.meta.env.VITE_API_URL) {
 
 app.use(Quasar, {
   plugins: {
-    Notify, // Register it here
-    Dialog
+    Notify,
+    Dialog,
+    Dark
   }
 })
 app.use(router).mount('#app')
