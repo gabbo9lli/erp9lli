@@ -112,7 +112,7 @@ def test_order_partial_and_full_fulfillment_to_ddt(client):
     assert "ddt" in ful_data1
     assert "order" in ful_data1
     assert ful_data1['ddt']['numero_completo'].startswith('DDT-')
-    assert ful_data1['order']['stato'] == "in_preparazione"
+    assert ful_data1['order']['stato'] == "in_lavorazione"
     assert ful_data1['order']['items'][0]['quantita_consegnata'] == 40.0
     assert ful_data1['order']['items'][0]['quantita_residua'] == 60.0
 

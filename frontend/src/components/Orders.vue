@@ -23,7 +23,7 @@
         :options="[
           { label: 'Tutti', value: 'tutti' },
           { label: 'Aperti', value: 'aperto' },
-          { label: 'In Preparazione', value: 'in_preparazione' },
+          { label: 'In Lavorazione', value: 'in_lavorazione' },
           { label: 'Chiusi', value: 'chiuso' }
         ]"
         @update:model-value="fetchOrders"
@@ -334,7 +334,7 @@ const calculatedTotalOrder = computed(() => {
 
 const getOrderStatusColor = (st) => {
   if (st === 'chiuso') return 'positive'
-  if (st === 'in_preparazione') return 'primary'
+  if (st === 'in_lavorazione') return 'primary'
   return 'orange'
 }
 

@@ -10,7 +10,7 @@ class CustomerOrder(db.Model):
     data_richiesta = db.Column(db.Date, nullable=True)
     data_confermata = db.Column(db.Date, nullable=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=False)
-    stato = db.Column(db.String(20), nullable=False, default='aperto') # aperto, in_preparazione, chiuso
+    stato = db.Column(db.String(20), nullable=False, default='aperto') # aperto, in_lavorazione, chiuso
     totale_imponibile = db.Column(db.Float, nullable=False, default=0.0)
     note = db.Column(db.Text, nullable=True)
 

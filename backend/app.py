@@ -1637,7 +1637,7 @@ def fulfill_order_to_ddt(oid):
     if all(it.stato == 'chiuso' for it in order.items):
         order.stato = 'chiuso'
     else:
-        order.stato = 'in_preparazione'
+        order.stato = 'in_lavorazione'
 
     try:
         db.session.commit()
