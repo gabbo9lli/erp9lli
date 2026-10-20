@@ -8,6 +8,7 @@ import PartnerManagement from './components/PartnerManagement.vue'
 import ProductCatalog from './components/ProductCatalog.vue'
 import DeliveryNotes from './components/DeliveryNotes.vue'
 import Invoices from './components/Invoices.vue'
+import Accounting from './components/Accounting.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -19,6 +20,7 @@ const routes = [
   { path: '/products', component: ProductCatalog, meta: { requiresAuth: true } },
   { path: '/delivery-notes', component: DeliveryNotes, meta: { requiresAuth: true } },
   { path: '/invoices', component: Invoices, meta: { requiresAuth: true } },
+  { path: '/accounting', component: Accounting, meta: { requiresAuth: true } },
   { path: '/database', component: DatabaseExplorer, meta: { requiresAuth: true } },
   { path: '/settings', component: () => import('./components/Settings.vue'), meta: { requiresAuth: true }},
   { path: '/users2', redirect: '/users' },

@@ -1,12 +1,14 @@
 from gevent import monkey
 monkey.patch_all()
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager, create_access_token
 from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
-from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment
+import io
+import csv
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem
 from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime, date, timedelta
@@ -1080,6 +1082,309 @@ def pay_installment(inst_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
+
+# ==========================================
+# CONTABILITÀ GENERALE, PRIMA NOTA & REPORT
+# ==========================================
+
+def get_next_journal_entry_number(anno):
+    max_num = db.session.query(func.max(JournalEntry.numero)).filter_by(anno=anno).scalar()
+    return (max_num or 0) + 1
+
+@app.route('/api/accounting/accounts', methods=['GET'])
+@require_auth()
+def get_accounts():
+    accounts = Account.query.order_by(Account.codice.asc()).all()
+    return jsonify([a.to_dict() for a in accounts]), 200
+
+@app.route('/api/accounting/accounts', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_account():
+    data = request.get_json() or {}
+    codice = data.get('codice')
+    nome = data.get('nome')
+    tipo = data.get('tipo')
+    if not codice or not nome or not tipo:
+        return jsonify({"error": "codice, nome e tipo sono obbligatori"}), 400
+    if Account.query.filter_by(codice=codice).first():
+        return jsonify({"error": f"Conto con codice {codice} già esistente"}), 400
+    acc = Account(codice=codice, nome=nome, tipo=tipo, attivo=data.get('attivo', True))
+    db.session.add(acc)
+    db.session.commit()
+    return jsonify(acc.to_dict()), 201
+
+@app.route('/api/accounting/entries', methods=['GET'])
+@require_auth()
+def get_journal_entries():
+    query = JournalEntry.query
+    anno = request.args.get('anno')
+    if anno:
+        query = query.filter_by(anno=int(anno))
+    search = request.args.get('search')
+    if search:
+        query = query.filter(JournalEntry.causale.ilike(f"%{search}%"))
+    entries = query.order_by(JournalEntry.data_registrazione.desc(), JournalEntry.numero.desc()).all()
+    return jsonify([e.to_dict() for e in entries]), 200
+
+@app.route('/api/accounting/entries/<int:eid>', methods=['GET'])
+@require_auth()
+def get_journal_entry_detail(eid):
+    entry = db.session.get(JournalEntry, eid)
+    if not entry:
+        return jsonify({"error": "Registrazione non trovata"}), 404
+    return jsonify(entry.to_dict()), 200
+
+@app.route('/api/accounting/entries', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_journal_entry():
+    data = request.get_json() or {}
+    causale = data.get('causale')
+    items_data = data.get('items', [])
+    if not causale:
+        return jsonify({"error": "causale is required"}), 400
+    if len(items_data) < 2:
+        return jsonify({"error": "La scrittura di prima nota richiede almeno due righe contabili"}), 400
+
+    totale_dare = 0.0
+    totale_avere = 0.0
+    journal_items = []
+
+    for it in items_data:
+        acc_id = it.get('account_id')
+        dare = round(float(it.get('dare', 0.0)), 2)
+        avere = round(float(it.get('avere', 0.0)), 2)
+        if not acc_id:
+            return jsonify({"error": "account_id obbligatorio per ciascuna riga"}), 400
+        totale_dare += dare
+        totale_avere += avere
+        journal_items.append(JournalItem(
+            account_id=acc_id,
+            partner_id=it.get('partner_id'),
+            dare=dare,
+            avere=avere,
+            descrizione_riga=it.get('descrizione_riga')
+        ))
+
+    totale_dare = round(totale_dare, 2)
+    totale_avere = round(totale_avere, 2)
+
+    # VINCOLO BLOCCANTE PARTITA DOPPIA A PAREGGIO
+    if abs(totale_dare - totale_avere) > 0.001:
+        return jsonify({"error": f"Scrittura sbilanciata! Il totale Dare (€ {totale_dare}) non coincide con il totale Avere (€ {totale_avere})"}), 400
+
+    doc_date_str = data.get('data_registrazione')
+    doc_date = datetime.strptime(doc_date_str, '%Y-%m-%d').date() if doc_date_str else date.today()
+    comp_date_str = data.get('data_competenza')
+    comp_date = datetime.strptime(comp_date_str, '%Y-%m-%d').date() if comp_date_str else doc_date
+
+    anno = doc_date.year
+    numero = get_next_journal_entry_number(anno)
+    numero_completo = f"PN-{anno}-{numero:04d}"
+
+    entry = JournalEntry(
+        numero=numero,
+        anno=anno,
+        numero_completo=numero_completo,
+        data_registrazione=doc_date,
+        data_competenza=comp_date,
+        causale=causale,
+        totale_dare=totale_dare,
+        totale_avere=totale_avere,
+        stato=data.get('stato', 'confermata'),
+        note=data.get('note'),
+        items=journal_items
+    )
+    db.session.add(entry)
+    try:
+        db.session.commit()
+        return jsonify(entry.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/accounting/reports/libro-giornale', methods=['GET'])
+@require_auth()
+def report_libro_giornale():
+    anno = request.args.get('anno')
+    query = JournalEntry.query.filter_by(stato='confermata')
+    if anno:
+        query = query.filter_by(anno=int(anno))
+    entries = query.order_by(JournalEntry.data_registrazione.asc(), JournalEntry.numero.asc()).all()
+
+    righe = []
+    tot_dare = 0.0
+    tot_avere = 0.0
+
+    for entry in entries:
+        for it in entry.items:
+            tot_dare += it.dare
+            tot_avere += it.avere
+            righe.append({
+                "entry_id": entry.id,
+                "data": entry.data_registrazione.isoformat(),
+                "numero": entry.numero_completo,
+                "causale": entry.causale,
+                "account_codice": it.account.codice if it.account else "",
+                "account_nome": it.account.nome if it.account else "",
+                "partner_nome": it.partner.ragione_sociale if it.partner else "",
+                "dare": it.dare,
+                "avere": it.avere
+            })
+
+    tot_dare = round(tot_dare, 2)
+    tot_avere = round(tot_avere, 2)
+
+    if request.args.get('format') == 'csv':
+        si = io.StringIO()
+        cw = csv.writer(si, delimiter=';')
+        cw.writerow(["Data", "Numero", "Causale", "Codice", "Conto", "Partner", "Dare", "Avere"])
+        for r in righe:
+            cw.writerow([r["data"], r["numero"], r["causale"], r["account_codice"], r["account_nome"], r["partner_nome"], f"{r['dare']:.2f}", f"{r['avere']:.2f}"])
+        cw.writerow([])
+        cw.writerow(["TOTALI", "", "", "", "", "", f"{tot_dare:.2f}", f"{tot_avere:.2f}"])
+        output = si.getvalue()
+        return Response(output, mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=libro_giornale.csv"})
+
+    return jsonify({
+        "anno": anno or date.today().year,
+        "totale_dare": tot_dare,
+        "totale_avere": tot_avere,
+        "quadratura": round(tot_dare - tot_avere, 2) == 0.0,
+        "righe": righe
+    }), 200
+
+@app.route('/api/accounting/reports/mastro', methods=['GET'])
+@require_auth()
+def report_mastro():
+    account_id = request.args.get('account_id')
+    if not account_id:
+        return jsonify({"error": "account_id is required"}), 400
+    account = db.session.get(Account, int(account_id))
+    if not account:
+        return jsonify({"error": "Account not found"}), 404
+
+    partner_id = request.args.get('partner_id')
+    query = JournalItem.query.join(JournalEntry).filter(
+        JournalItem.account_id == account.id,
+        JournalEntry.stato == 'confermata'
+    )
+    if partner_id:
+        query = query.filter(JournalItem.partner_id == int(partner_id))
+
+    items = query.order_by(JournalEntry.data_registrazione.asc(), JournalEntry.numero.asc()).all()
+
+    saldo_progressivo = 0.0
+    movimenti = []
+    tot_dare = 0.0
+    tot_avere = 0.0
+
+    for it in items:
+        tot_dare += it.dare
+        tot_avere += it.avere
+        if account.tipo in ['attivo', 'costi']:
+            saldo_progressivo += (it.dare - it.avere)
+        else:
+            saldo_progressivo += (it.avere - it.dare)
+
+        movimenti.append({
+            "id": it.id,
+            "data": it.entry.data_registrazione.isoformat(),
+            "numero": it.entry.numero_completo,
+            "causale": it.entry.causale,
+            "partner_nome": it.partner.ragione_sociale if it.partner else None,
+            "dare": it.dare,
+            "avere": it.avere,
+            "saldo_progressivo": round(saldo_progressivo, 2)
+        })
+
+    tot_dare = round(tot_dare, 2)
+    tot_avere = round(tot_avere, 2)
+    saldo_finale = round(saldo_progressivo, 2)
+
+    if request.args.get('format') == 'csv':
+        si = io.StringIO()
+        cw = csv.writer(si, delimiter=';')
+        cw.writerow(["Estratto Conto Mastro", f"{account.codice} - {account.nome} ({account.tipo})"])
+        cw.writerow(["Data", "Numero", "Causale", "Partner", "Dare", "Avere", "Saldo Progressivo"])
+        for m in movimenti:
+            cw.writerow([m["data"], m["numero"], m["causale"], m["partner_nome"] or "", f"{m['dare']:.2f}", f"{m['avere']:.2f}", f"{m['saldo_progressivo']:.2f}"])
+        cw.writerow([])
+        cw.writerow(["TOTALI", "", "", "", f"{tot_dare:.2f}", f"{tot_avere:.2f}", f"SALDO FINALE: {saldo_finale:.2f}"])
+        output = si.getvalue()
+        return Response(output, mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename=mastro_{account.codice}.csv"})
+
+    return jsonify({
+        "conto": account.to_dict(),
+        "totale_dare": tot_dare,
+        "totale_avere": tot_avere,
+        "saldo_finale": saldo_finale,
+        "movimenti": movimenti
+    }), 200
+
+@app.route('/api/accounting/reports/bilancio-verifica', methods=['GET'])
+@require_auth()
+def report_bilancio_verifica():
+    anno = request.args.get('anno')
+    accounts = Account.query.order_by(Account.codice.asc()).all()
+
+    conti_report = []
+    tot_dare_gen = 0.0
+    tot_avere_gen = 0.0
+
+    for acc in accounts:
+        items_query = JournalItem.query.join(JournalEntry).filter(
+            JournalItem.account_id == acc.id,
+            JournalEntry.stato == 'confermata'
+        )
+        if anno:
+            items_query = items_query.filter(JournalEntry.anno == int(anno))
+
+        items = items_query.all()
+        if not items:
+            continue
+
+        acc_dare = round(sum(it.dare for it in items), 2)
+        acc_avere = round(sum(it.avere for it in items), 2)
+
+        if acc.tipo in ['attivo', 'costi']:
+            saldo_netto = round(acc_dare - acc_avere, 2)
+        else:
+            saldo_netto = round(acc_avere - acc_dare, 2)
+
+        tot_dare_gen += acc_dare
+        tot_avere_gen += acc_avere
+
+        conti_report.append({
+            "account_id": acc.id,
+            "codice": acc.codice,
+            "nome": acc.nome,
+            "tipo": acc.tipo,
+            "totale_dare": acc_dare,
+            "totale_avere": acc_avere,
+            "saldo_netto": saldo_netto
+        })
+
+    tot_dare_gen = round(tot_dare_gen, 2)
+    tot_avere_gen = round(tot_avere_gen, 2)
+
+    if request.args.get('format') == 'csv':
+        si = io.StringIO()
+        cw = csv.writer(si, delimiter=';')
+        cw.writerow(["Codice", "Conto", "Mastro", "Totale Dare", "Totale Avere", "Saldo Netto"])
+        for c in conti_report:
+            cw.writerow([c["codice"], c["nome"], c["tipo"], f"{c['totale_dare']:.2f}", f"{c['totale_avere']:.2f}", f"{c['saldo_netto']:.2f}"])
+        cw.writerow([])
+        cw.writerow(["TOTALI A PAREGGIO", "", "", f"{tot_dare_gen:.2f}", f"{tot_avere_gen:.2f}", ""])
+        output = si.getvalue()
+        return Response(output, mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=bilancio_verifica.csv"})
+
+    return jsonify({
+        "anno": anno or date.today().year,
+        "totale_dare": tot_dare_gen,
+        "totale_avere": tot_avere_gen,
+        "quadratura": round(tot_dare_gen - tot_avere_gen, 2) == 0.0,
+        "conti": conti_report
+    }), 200
     
 @socketio.on('connect')
 def handle_connect():
