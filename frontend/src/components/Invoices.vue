@@ -95,8 +95,19 @@
           </template>
 
           <template v-slot:body-cell-actions="props">
-            <q-td :props="props" align="right">
-              <q-btn flat round dense color="primary" icon="visibility" @click="viewInvoice(props.row)" />
+            <q-td :props="props" align="right" class="q-gutter-xs">
+              <q-btn flat round dense color="primary" icon="visibility" @click="viewInvoice(props.row)">
+                <q-tooltip>Visualizza Dettaglio</q-tooltip>
+              </q-btn>
+              <q-btn 
+                color="indigo" 
+                dense 
+                size="sm" 
+                icon="code" 
+                label="XML SDI" 
+                @click="downloadXml(props.row)"
+                title="Scarica XML Fattura Elettronica"
+              />
             </q-td>
           </template>
         </q-table>
@@ -257,6 +268,21 @@
         </q-card-section>
         <q-separator />
         <q-card-section class="q-gutter-sm">
+          <!-- Box SDI -->
+          <div class="q-pa-sm bg-blue-1 rounded-borders row items-center justify-between q-mb-sm">
+            <div>
+              <div class="text-subtitle2 text-indigo-9 text-weight-bold">
+                <q-icon name="verified" class="q-mr-xs" />
+                Fattura Elettronica SDI (FPR12)
+              </div>
+              <div class="text-caption text-grey-8">
+                Codice SDI: <strong>{{ selectedInvoice?.cliente?.codice_sdi || '0000000' }}</strong>
+                <span v-if="selectedInvoice?.cliente?.pec" class="q-ml-sm">PEC: {{ selectedInvoice?.cliente?.pec }}</span>
+              </div>
+            </div>
+            <q-btn color="indigo" icon="download" label="Scarica XML SDI" size="sm" @click="downloadXml(selectedInvoice)" />
+          </div>
+
           <div class="text-subtitle2 text-weight-bold">Castelletto IVA</div>
           <div class="row q-gutter-md">
             <div v-for="(iva, aliquota) in selectedInvoice?.castelletto_iva" :key="aliquota" class="q-pa-sm bg-grey-2 rounded-borders">
@@ -449,6 +475,11 @@ const payInstallment = async (inst) => {
       alert(err.response?.data?.error || 'Errore durante registrazione incasso')
     }
   }
+}
+
+const downloadXml = (inv) => {
+  if (!inv) return
+  window.open(`/api/invoices/${inv.id}/xml`, '_blank')
 }
 
 onMounted(() => {

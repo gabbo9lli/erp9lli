@@ -16,6 +16,7 @@ import calendar
 import re
 from functools import wraps
 from flask_socketio import SocketIO, emit
+from services.sdi_service import generate_sdi_xml, validate_sdi_invoice
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -1067,6 +1068,29 @@ def get_invoice_detail(iid):
     if not invoice:
         return jsonify({"error": "Invoice not found"}), 404
     return jsonify(invoice.to_dict()), 200
+
+@app.route('/api/invoices/<int:iid>/sdi-validate', methods=['GET'])
+@require_auth()
+def sdi_validate_invoice_endpoint(iid):
+    invoice = db.session.get(Invoice, iid)
+    if not invoice:
+        return jsonify({"error": "Invoice not found"}), 404
+    val_res = validate_sdi_invoice(invoice)
+    return jsonify(val_res), 200
+
+@app.route('/api/invoices/<int:iid>/xml', methods=['GET'])
+@require_auth()
+def download_sdi_xml_endpoint(iid):
+    invoice = db.session.get(Invoice, iid)
+    if not invoice:
+        return jsonify({"error": "Invoice not found"}), 404
+    try:
+        xml_content, filename = generate_sdi_xml(invoice)
+        response = Response(xml_content, mimetype='application/xml; charset=utf-8')
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
 @app.route('/api/installments', methods=['GET'])
 @require_auth()
