@@ -8,7 +8,7 @@ from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
 import io
 import csv
-from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem
 from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime, date, timedelta
@@ -104,7 +104,7 @@ def get_me():
 # ==========================================
 # GESTIONE MODULI & FEATURE FLAGS
 # ==========================================
-AVAILABLE_MODULES = ["anagrafiche", "orders", "delivery_notes", "invoicing", "accounting", "warehouse"]
+AVAILABLE_MODULES = ["anagrafiche", "orders", "delivery_notes", "invoicing", "accounting", "warehouse", "pallets"]
 
 def is_module_enabled(module_name):
     enabled = os.getenv('ENABLED_MODULES', 'all').strip().lower()
@@ -1876,6 +1876,332 @@ def get_fefo_suggestions():
         item['consigliato_fefo'] = (idx == 0)
 
     return jsonify(suggestions), 200
+
+# ==========================================
+# SUPPLY CHAIN: INTERSCAMBIO PALLET (L. 182/2025)
+# ==========================================
+
+DEFAULT_PALLET_TYPES = [
+    {"codice": "EPAL", "descrizione": "Pallet EUR/EPAL Legno Standard 80x120", "materiale": "legno", "valore_risarcimento": 18.0},
+    {"codice": "CPR_40x60", "descrizione": "Cassa CPR System Verde 40x60", "materiale": "plastica", "valore_risarcimento": 2.5},
+    {"codice": "CPR_30x40", "descrizione": "Cassa CPR System Verde 30x40", "materiale": "plastica", "valore_risarcimento": 1.8},
+    {"codice": "CHEP", "descrizione": "Pallet Blu CHEP 80x120", "materiale": "legno", "valore_risarcimento": 22.0},
+    {"codice": "IFCO", "descrizione": "Cassa Pieghevole IFCO Green", "materiale": "plastica", "valore_risarcimento": 3.0}
+]
+
+def seed_default_pallet_types():
+    if PalletType.query.count() == 0:
+        for pt in DEFAULT_PALLET_TYPES:
+            db.session.add(PalletType(**pt))
+        db.session.commit()
+
+def get_next_pallet_receipt_number(anno):
+    max_num = db.session.query(func.max(PalletReceipt.numero)).filter_by(anno=anno).scalar()
+    return (max_num or 0) + 1
+
+@app.route('/api/pallets/types', methods=['GET'])
+@require_auth()
+def get_pallet_types():
+    seed_default_pallet_types()
+    types = PalletType.query.filter_by(attivo=True).order_by(PalletType.codice.asc()).all()
+    return jsonify([t.to_dict() for t in types]), 200
+
+@app.route('/api/pallets/types', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_pallet_type():
+    data = request.get_json() or {}
+    codice = data.get('codice')
+    descrizione = data.get('descrizione')
+    if not codice or not descrizione:
+        return jsonify({"error": "codice e descrizione sono obbligatori"}), 400
+    pt = PalletType(
+        codice=codice,
+        descrizione=descrizione,
+        materiale=data.get('materiale', 'legno'),
+        valore_risarcimento=float(data.get('valore_risarcimento', 18.0)),
+        attivo=data.get('attivo', True)
+    )
+    db.session.add(pt)
+    db.session.commit()
+    return jsonify(pt.to_dict()), 201
+
+@app.route('/api/pallets/receipts', methods=['GET'])
+@require_auth()
+def get_pallet_receipts():
+    query = PalletReceipt.query
+    partner_id = request.args.get('partner_id')
+    if partner_id:
+        query = query.filter_by(partner_id=int(partner_id))
+    stato = request.args.get('stato')
+    if stato and stato != 'tutti':
+        query = query.filter_by(stato=stato)
+    search = request.args.get('search')
+    if search:
+        search_filter = f"%{search}%"
+        query = query.join(PalletReceipt.partner).filter(
+            (PalletReceipt.numero_completo.ilike(search_filter)) |
+            (Partner.ragione_sociale.ilike(search_filter))
+        )
+    receipts = query.order_by(PalletReceipt.data_emissione.desc(), PalletReceipt.numero.desc()).all()
+    return jsonify([r.to_dict() for r in receipts]), 200
+
+@app.route('/api/pallets/receipts/<int:pid>', methods=['GET'])
+@require_auth()
+def get_pallet_receipt_detail(pid):
+    receipt = db.session.get(PalletReceipt, pid)
+    if not receipt:
+        return jsonify({"error": "Pallet receipt not found"}), 404
+    return jsonify(receipt.to_dict()), 200
+
+@app.route('/api/pallets/receipts', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_pallet_receipt():
+    seed_default_pallet_types()
+    data = request.get_json() or {}
+    partner_id = data.get('partner_id')
+    if not partner_id:
+        return jsonify({"error": "partner_id is required"}), 400
+    partner = db.session.get(Partner, partner_id)
+    if not partner:
+        return jsonify({"error": "Partner not found"}), 404
+
+    items_data = data.get('items', [])
+    if not items_data:
+        return jsonify({"error": "Almeno una tipologia pallet richiesta"}), 400
+
+    doc_date_str = data.get('data_emissione')
+    doc_date = datetime.strptime(doc_date_str, '%Y-%m-%d').date() if doc_date_str else date.today()
+
+    term_days = int(data.get('termini_giorni', 60))
+    limit_date_str = data.get('data_limite_restituzione')
+    limit_date = datetime.strptime(limit_date_str, '%Y-%m-%d').date() if limit_date_str else (doc_date + timedelta(days=term_days))
+
+    anno = doc_date.year
+    numero = get_next_pallet_receipt_number(anno)
+    numero_completo = f"BP-{anno}-{numero:04d}"
+
+    totale_consegnati = 0
+    totale_restituiti = 0
+    receipt_items = []
+
+    for it in items_data:
+        pt_id = it.get('pallet_type_id')
+        ptype = db.session.get(PalletType, pt_id) if pt_id else None
+        if not ptype:
+            return jsonify({"error": f"PalletType {pt_id} non trovato"}), 404
+
+        q_cons = int(it.get('quantita_consegnata', 0))
+        q_rest = int(it.get('quantita_restituita', 0))
+        saldo_r = q_cons - q_rest
+
+        totale_consegnati += q_cons
+        totale_restituiti += q_rest
+
+        receipt_items.append(PalletReceiptItem(
+            pallet_type_id=pt_id,
+            quantita_consegnata=q_cons,
+            quantita_restituita=q_rest,
+            saldo_riga=saldo_r
+        ))
+
+    saldo_netto = totale_consegnati - totale_restituiti
+    stato = 'saldato' if saldo_netto <= 0 else 'aperto'
+
+    receipt = PalletReceipt(
+        numero=numero,
+        anno=anno,
+        numero_completo=numero_completo,
+        data_emissione=doc_date,
+        data_limite_restituzione=limit_date,
+        partner_id=partner.id,
+        delivery_note_id=data.get('delivery_note_id'),
+        tipo=data.get('tipo', 'uscita'),
+        totale_consegnati=totale_consegnati,
+        totale_restituiti=totale_restituiti,
+        saldo_netto=saldo_netto,
+        stato=stato,
+        note=data.get('note'),
+        items=receipt_items
+    )
+    db.session.add(receipt)
+    try:
+        db.session.commit()
+        return jsonify(receipt.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/pallets/receipts/<int:pid>/return', methods=['POST'])
+@require_auth(roles=['Admin'])
+def return_pallet_receipt(pid):
+    receipt = db.session.get(PalletReceipt, pid)
+    if not receipt:
+        return jsonify({"error": "Pallet receipt not found"}), 404
+    if receipt.stato == 'fatturato':
+        return jsonify({"error": "Impossibile restituire pallet su un buono già fatturato"}), 400
+
+    data = request.get_json() or {}
+    items_returns = data.get('items', [])
+    items_map = {it.pallet_type_id: it for it in receipt.items}
+
+    for ret in items_returns:
+        pt_id = ret.get('pallet_type_id')
+        q_ret = int(ret.get('quantita_restituita', 0))
+        item = items_map.get(pt_id)
+        if item:
+            item.quantita_restituita += q_ret
+            item.saldo_riga = item.quantita_consegnata - item.quantita_restituita
+
+    receipt.totale_restituiti = sum(it.quantita_restituita for it in receipt.items)
+    receipt.saldo_netto = receipt.totale_consegnati - receipt.totale_restituiti
+    if receipt.saldo_netto <= 0:
+        receipt.stato = 'saldato'
+    else:
+        receipt.stato = 'aperto'
+
+    try:
+        db.session.commit()
+        return jsonify(receipt.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/pallets/ledger', methods=['GET'])
+@require_auth()
+def get_pallets_ledger():
+    seed_default_pallet_types()
+    pallet_types = PalletType.query.filter_by(attivo=True).all()
+    partners = Partner.query.all()
+
+    ledger = []
+    today = date.today()
+
+    for p in partners:
+        receipts = PalletReceipt.query.filter_by(partner_id=p.id).all()
+        if not receipts:
+            continue
+
+        saldi = {pt.codice: 0 for pt in pallet_types}
+        buoni_aperti = 0
+        buoni_scaduti = 0
+
+        for r in receipts:
+            if r.stato == 'aperto':
+                buoni_aperti += 1
+                if r.data_limite_restituzione and r.data_limite_restituzione < today:
+                    buoni_scaduti += 1
+
+                for it in r.items:
+                    if it.pallet_type and it.pallet_type.codice in saldi:
+                        saldi[it.pallet_type.codice] += it.saldo_riga
+
+        total_debt = sum(saldi.values())
+        if total_debt > 0 or buoni_aperti > 0:
+            ledger.append({
+                "partner_id": p.id,
+                "partner_nome": p.ragione_sociale,
+                "partner_tipo": p.tipo,
+                "saldi": saldi,
+                "totale_bancali_debito": total_debt,
+                "buoni_aperti_count": buoni_aperti,
+                "buoni_scaduti_count": buoni_scaduti
+            })
+
+    ledger.sort(key=lambda x: x['totale_bancali_debito'], reverse=True)
+    return jsonify(ledger), 200
+
+@app.route('/api/pallets/receipts/<int:pid>/invoice-unreturned', methods=['POST'])
+@require_auth(roles=['Admin'])
+def invoice_unreturned_pallets(pid):
+    receipt = db.session.get(PalletReceipt, pid)
+    if not receipt:
+        return jsonify({"error": "Pallet receipt not found"}), 404
+    if receipt.stato == 'saldato':
+        return jsonify({"error": "Il buono pallet è già saldato"}), 400
+    if receipt.stato == 'fatturato':
+        return jsonify({"error": "Il buono pallet è già stato fatturato"}), 400
+
+    items_unreturned = [it for it in receipt.items if it.saldo_riga > 0]
+    if not items_unreturned:
+        return jsonify({"error": "Nessun pallet a debito da fatturare"}), 400
+
+    today = date.today()
+    anno = today.year
+    numero = get_next_invoice_number(anno)
+    numero_completo = f"FT-{anno}-{numero:04d}"
+
+    totale_imponibile = 0.0
+    invoice_items = []
+
+    for it in items_unreturned:
+        valore = float(it.pallet_type.valore_risarcimento if it.pallet_type else 18.0)
+        qta = float(it.saldo_riga)
+        imp_riga = round(qta * valore, 2)
+        totale_imponibile += imp_riga
+
+        prod = Product.query.filter_by(codice=f"IMB-{it.pallet_type.codice}").first()
+        if not prod:
+            prod = Product.query.filter_by(categoria="imballo").first()
+        prod_id = prod.id if prod else 1
+
+        invoice_items.append(InvoiceItem(
+            product_id=prod_id,
+            descrizione=f"Cessione {it.pallet_type.descrizione} non restituiti ex L. 182/2025 da Buono {receipt.numero_completo}",
+            unita_misura="PZ",
+            colli=int(qta),
+            quantita=qta,
+            prezzo_unitario=valore,
+            aliquota_iva=0,
+            imponibile_riga=imp_riga
+        ))
+
+    totale_imponibile = round(totale_imponibile, 2)
+    totale_fattura = totale_imponibile
+
+    note_fiscale = (
+        f"Fatturazione mancata restituzione pallet ex L. 182/2025 su Buono Pallet {receipt.numero_completo}. "
+        "Operazione in Reverse Charge ai sensi dell'Art. 74 comma 7/8 DPR 633/72 per cessione imballaggi usati."
+    )
+
+    rate_data = calculate_installments(totale_fattura, today, receipt.partner.condizioni_pagamento or '30gg fm')
+    installments = [
+        InvoiceInstallment(
+            numero_rata=r["numero_rata"],
+            totale_rate=r["totale_rate"],
+            data_scadenza=r["data_scadenza"],
+            importo=r["importo"],
+            stato="aperta"
+        ) for r in rate_data
+    ]
+
+    invoice = Invoice(
+        numero=numero,
+        anno=anno,
+        numero_completo=numero_completo,
+        tipo_documento='TD01',
+        data_documento=today,
+        cliente_id=receipt.partner_id,
+        condizioni_pagamento=receipt.partner.condizioni_pagamento or '30gg fm',
+        esigibilita_iva='I',
+        totale_imponibile=totale_imponibile,
+        totale_imposta=0.0,
+        totale_fattura=totale_fattura,
+        castelletto_iva={"0": {"imponibile": totale_imponibile, "imposta": 0.0}},
+        stato='emessa',
+        note=note_fiscale,
+        items=invoice_items,
+        installments=installments
+    )
+    db.session.add(invoice)
+
+    receipt.stato = 'fatturato'
+
+    try:
+        db.session.commit()
+        return jsonify(invoice.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
     
 @socketio.on('connect')
 def handle_connect():

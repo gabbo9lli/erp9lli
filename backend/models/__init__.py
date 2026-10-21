@@ -14,6 +14,9 @@ from .customer_order import CustomerOrder
 from .order_item import OrderItem
 from .purchase_delivery_note import PurchaseDeliveryNote
 from .purchase_delivery_note_item import PurchaseDeliveryNoteItem
+from .pallet_type import PalletType
+from .pallet_receipt import PalletReceipt
+from .pallet_receipt_item import PalletReceiptItem
 
 __all__ = [
     "db",
@@ -32,4 +35,7 @@ __all__ = [
     "OrderItem",
     "PurchaseDeliveryNote",
     "PurchaseDeliveryNoteItem",
+    "PalletType",
+    "PalletReceipt",
+    "PalletReceiptItem",
 ]

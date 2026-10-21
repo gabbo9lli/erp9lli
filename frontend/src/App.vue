@@ -133,23 +133,30 @@
           </template>
 
           <!-- LOGISTICA & MAGAZZINO -->
-          <template v-if="activeModules.warehouse">
+          <template v-if="activeModules.warehouse || activeModules.pallets">
             <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
               Logistica & Magazzino
             </q-item-label>
 
-            <q-item clickable v-ripple to="/purchases" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item v-if="activeModules.warehouse" clickable v-ripple to="/purchases" active-class="text-primary bg-blue-1 text-weight-bold">
               <q-item-section avatar>
                 <q-icon name="move_to_inbox" />
               </q-item-section>
               <q-item-section>Entrata Merci (Carichi)</q-item-section>
             </q-item>
 
-            <q-item clickable v-ripple to="/warehouse" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item v-if="activeModules.warehouse" clickable v-ripple to="/warehouse" active-class="text-primary bg-blue-1 text-weight-bold">
               <q-item-section avatar>
                 <q-icon name="inventory_2" />
               </q-item-section>
               <q-item-section>Giacenze & Lotti FEFO</q-item-section>
+            </q-item>
+
+            <q-item v-if="activeModules.pallets" clickable v-ripple to="/pallets" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="layers" />
+              </q-item-section>
+              <q-item-section>Interscambio Pallet (L.182)</q-item-section>
             </q-item>
 
             <q-separator class="q-my-sm" />
@@ -255,7 +262,8 @@ const activeModules = ref({
   delivery_notes: true,
   invoicing: true,
   accounting: true,
-  warehouse: true
+  warehouse: true,
+  pallets: true
 })
 
 const fetchModules = async () => {
