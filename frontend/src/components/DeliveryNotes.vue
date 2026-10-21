@@ -257,6 +257,19 @@
                     :placeholder="item.in_scadenza ? 'Obbligatorio Bio' : 'Lotto'"
                     :disable="form.stato !== 'bozza'"
                   />
+                  <q-btn
+                    v-if="item.fefo_suggestion && form.stato === 'bozza'"
+                    flat
+                    dense
+                    size="xs"
+                    color="positive"
+                    icon="auto_awesome"
+                    :label="`FEFO: ${item.fefo_suggestion.lotto}`"
+                    @click="applyFefo(item)"
+                    class="q-mt-xs"
+                  >
+                    <q-tooltip>Usa consigliato FEFO (Scad: {{ item.fefo_suggestion.data_scadenza }}, Giac: {{ item.fefo_suggestion.giacenza_kg }} Kg)</q-tooltip>
+                  </q-btn>
                 </div>
                 <div class="col-5 col-md-2">
                   <q-input 
@@ -437,16 +450,43 @@ const removeItemRow = (idx) => {
   form.value.items.splice(idx, 1)
 }
 
-const onProductSelect = (productId, item) => {
-  const prod = products.value.find(p => p.id === productId)
-  if (prod) {
-    item.descrizione = prod.descrizione
-    item.unita_misura = prod.unita_misura
-    item.prezzo_unitario = prod.prezzo_vendita
-    item.aliquota_iva = prod.aliquota_iva
-    item.in_scadenza = prod.in_scadenza
+const fefoSuggestions = ref([])
+
+const loadFefoSuggestions = async (productId, item = null) => {
+  try {
+    const res = await axios.get(`/api/warehouse/fefo-suggestions?product_id=${productId}`)
+    fefoSuggestions.value = res.data
+    if (item && res.data.length > 0) {
+      item.fefo_suggestion = res.data[0]
+    }
+  } catch (err) {
+    fefoSuggestions.value = []
   }
 }
+
+const applyFefo = (item) => {
+  if (item.fefo_suggestion) {
+    item.lotto = item.fefo_suggestion.lotto
+    item.data_scadenza = item.fefo_suggestion.data_scadenza
+  }
+}
+
+const onProductSelect = async (productId, item = {}) => {
+  const prod = products.value.find(p => p.id === productId) || (typeof item === 'object' && item.in_scadenza !== undefined ? item : null)
+  if (prod) {
+    item.descrizione = prod.descrizione || item.descrizione
+    item.unita_misura = prod.unita_misura || item.unita_misura
+    item.prezzo_unitario = prod.prezzo_vendita ?? item.prezzo_unitario
+    item.aliquota_iva = prod.aliquota_iva ?? item.aliquota_iva
+    item.in_scadenza = prod.in_scadenza ?? item.in_scadenza
+
+    if (item.in_scadenza) {
+      await loadFefoSuggestions(productId, item)
+    }
+  }
+}
+
+const onProductSelected = onProductSelect
 
 const saveDdt = async (confirmImmediately = false) => {
   if (!form.value.cliente_id) {

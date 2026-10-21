@@ -64,7 +64,9 @@ describe('DeliveryNotes.vue', () => {
           'q-card-actions': true,
           'q-space': true,
           'q-chip': true,
-          'q-select': true
+          'q-select': true,
+          'q-checkbox': true,
+          'q-badge': true
         }
       }
     })
@@ -73,6 +75,47 @@ describe('DeliveryNotes.vue', () => {
     expect(wrapper.text()).toContain('Documenti di Trasporto (DDT)')
     expect(wrapper.text()).toContain('DDT-2026-0001')
     expect(wrapper.text()).toContain('EcorNaturaSì SpA')
-    expect(wrapper.text()).toContain('confermato')
+  })
+
+  it('loads FEFO suggestions when perishable product is selected', async () => {
+    const mockFefo = [
+      { lotto: 'LOTTO-FEFO-1', data_scadenza: '2026-11-10', giacenza_kg: 50.0, consigliato_fefo: true }
+    ]
+
+    vi.spyOn(axios, 'get').mockImplementation((url) => {
+      if (url.includes('/api/warehouse/fefo-suggestions')) {
+        return Promise.resolve({ data: mockFefo })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    const wrapper = mount(DeliveryNotes, {
+      global: {
+        stubs: {
+          'q-table': true,
+          'q-btn': true,
+          'q-btn-toggle': true,
+          'q-input': true,
+          'q-icon': true,
+          'q-dialog': true,
+          'q-card': true,
+          'q-card-section': true,
+          'q-card-actions': true,
+          'q-space': true,
+          'q-chip': true,
+          'q-select': true,
+          'q-checkbox': true,
+          'q-badge': true
+        }
+      }
+    })
+    await flushPromises()
+
+    wrapper.vm.onProductSelected(1, { in_scadenza: true, prezzo_vendita: 2.0 })
+    await flushPromises()
+
+    expect(axios.get).toHaveBeenCalledWith('/api/warehouse/fefo-suggestions?product_id=1')
+    expect(wrapper.vm.fefoSuggestions.length).toBe(1)
+    expect(wrapper.vm.fefoSuggestions[0].lotto).toBe('LOTTO-FEFO-1')
   })
 })

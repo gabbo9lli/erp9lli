@@ -12,6 +12,8 @@ from .journal_entry import JournalEntry
 from .journal_item import JournalItem
 from .customer_order import CustomerOrder
 from .order_item import OrderItem
+from .purchase_delivery_note import PurchaseDeliveryNote
+from .purchase_delivery_note_item import PurchaseDeliveryNoteItem
 
 __all__ = [
     "db",
@@ -28,4 +30,6 @@ __all__ = [
     "JournalItem",
     "CustomerOrder",
     "OrderItem",
+    "PurchaseDeliveryNote",
+    "PurchaseDeliveryNoteItem",
 ]

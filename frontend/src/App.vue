@@ -132,6 +132,29 @@
             <q-separator class="q-my-sm" />
           </template>
 
+          <!-- LOGISTICA & MAGAZZINO -->
+          <template v-if="activeModules.warehouse">
+            <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
+              Logistica & Magazzino
+            </q-item-label>
+
+            <q-item clickable v-ripple to="/purchases" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="move_to_inbox" />
+              </q-item-section>
+              <q-item-section>Entrata Merci (Carichi)</q-item-section>
+            </q-item>
+
+            <q-item clickable v-ripple to="/warehouse" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="inventory_2" />
+              </q-item-section>
+              <q-item-section>Giacenze & Lotti FEFO</q-item-section>
+            </q-item>
+
+            <q-separator class="q-my-sm" />
+          </template>
+
           <!-- AMMINISTRAZIONE & CONTABILITÀ -->
           <template v-if="activeModules.accounting">
             <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
@@ -231,7 +254,8 @@ const activeModules = ref({
   orders: true,
   delivery_notes: true,
   invoicing: true,
-  accounting: true
+  accounting: true,
+  warehouse: true
 })
 
 const fetchModules = async () => {

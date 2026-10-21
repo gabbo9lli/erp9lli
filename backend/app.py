@@ -8,7 +8,7 @@ from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
 import io
 import csv
-from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem
 from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime, date, timedelta
@@ -104,7 +104,7 @@ def get_me():
 # ==========================================
 # GESTIONE MODULI & FEATURE FLAGS
 # ==========================================
-AVAILABLE_MODULES = ["anagrafiche", "orders", "delivery_notes", "invoicing", "accounting"]
+AVAILABLE_MODULES = ["anagrafiche", "orders", "delivery_notes", "invoicing", "accounting", "warehouse"]
 
 def is_module_enabled(module_name):
     enabled = os.getenv('ENABLED_MODULES', 'all').strip().lower()
@@ -1648,6 +1648,234 @@ def fulfill_order_to_ddt(oid):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
+
+# ==========================================
+# SUPPLY CHAIN: ENTRATA MERCI & GIACENZE FEFO
+# ==========================================
+
+@app.route('/api/purchases', methods=['GET'])
+@require_auth()
+def get_purchases():
+    query = PurchaseDeliveryNote.query
+    fornitore_id = request.args.get('fornitore_id')
+    if fornitore_id:
+        query = query.filter_by(fornitore_id=int(fornitore_id))
+    search = request.args.get('search')
+    if search:
+        search_filter = f"%{search}%"
+        query = query.join(PurchaseDeliveryNote.fornitore).filter(
+            (PurchaseDeliveryNote.numero_documento_fornitore.ilike(search_filter)) |
+            (Partner.ragione_sociale.ilike(search_filter))
+        )
+    purchases = query.order_by(PurchaseDeliveryNote.data_ricezione.desc(), PurchaseDeliveryNote.id.desc()).all()
+    return jsonify([p.to_dict() for p in purchases]), 200
+
+@app.route('/api/purchases/<int:pid>', methods=['GET'])
+@require_auth()
+def get_purchase_detail(pid):
+    purchase = db.session.get(PurchaseDeliveryNote, pid)
+    if not purchase:
+        return jsonify({"error": "Purchase not found"}), 404
+    return jsonify(purchase.to_dict()), 200
+
+@app.route('/api/purchases', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_purchase():
+    data = request.get_json() or {}
+    fornitore_id = data.get('fornitore_id')
+    num_doc = data.get('numero_documento_fornitore')
+    if not fornitore_id or not num_doc:
+        return jsonify({"error": "fornitore_id e numero_documento_fornitore sono obbligatori"}), 400
+
+    supplier = db.session.get(Partner, fornitore_id)
+    if not supplier:
+        return jsonify({"error": "Fornitore non trovato"}), 404
+
+    items_data = data.get('items', [])
+    if not items_data:
+        return jsonify({"error": "Almeno una riga merce richiesta"}), 400
+
+    doc_date_str = data.get('data_documento')
+    doc_date = datetime.strptime(doc_date_str, '%Y-%m-%d').date() if doc_date_str else date.today()
+    ric_date_str = data.get('data_ricezione')
+    ric_date = datetime.strptime(ric_date_str, '%Y-%m-%d').date() if ric_date_str else date.today()
+
+    totale_imponibile = 0.0
+    totale_colli = 0
+    totale_peso_netto = 0.0
+    purchase_items = []
+
+    for it in items_data:
+        prod_id = it.get('product_id')
+        product = db.session.get(Product, prod_id) if prod_id else None
+        if not product:
+            return jsonify({"error": f"Prodotto ID {prod_id} non trovato"}), 404
+
+        lotto = it.get('lotto')
+        scadenza_str = it.get('data_scadenza')
+        scadenza_date = datetime.strptime(scadenza_str, '%Y-%m-%d').date() if scadenza_str else None
+
+        if product.in_scadenza:
+            if not lotto or not str(lotto).strip():
+                return jsonify({"error": f"Il lotto è obbligatorio per l'articolo biologico '{product.descrizione}'"}), 400
+            if not scadenza_date:
+                return jsonify({"error": f"La data di scadenza è obbligatoria per l'articolo biologico '{product.descrizione}'"}), 400
+
+        colli = int(it.get('colli', 1))
+        qta = float(it.get('quantita', 1.0))
+        prezzo = float(it.get('prezzo_unitario', product.prezzo_acquisto if product else 0.0))
+        aliquota = int(it.get('aliquota_iva', product.aliquota_iva if product else 4))
+
+        if prezzo > 0:
+            product.prezzo_acquisto = prezzo
+
+        totale_imponibile += round(qta * prezzo, 2)
+        totale_colli += colli
+        totale_peso_netto += qta
+
+        purchase_items.append(PurchaseDeliveryNoteItem(
+            product_id=prod_id,
+            descrizione=it.get('descrizione', product.descrizione),
+            unita_misura=it.get('unita_misura', product.unita_misura),
+            colli=colli,
+            quantita=qta,
+            prezzo_unitario=prezzo,
+            aliquota_iva=aliquota,
+            lotto=lotto,
+            data_scadenza=scadenza_date
+        ))
+
+    purchase = PurchaseDeliveryNote(
+        numero_documento_fornitore=num_doc,
+        data_documento=doc_date,
+        data_ricezione=ric_date,
+        fornitore_id=supplier.id,
+        colli_totali=totale_colli,
+        peso_totale_netto=round(totale_peso_netto, 2),
+        totale_imponibile=round(totale_imponibile, 2),
+        note=data.get('note'),
+        items=purchase_items
+    )
+    db.session.add(purchase)
+    try:
+        db.session.commit()
+        return jsonify(purchase.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/warehouse/stock', methods=['GET'])
+@require_auth()
+def get_warehouse_stock():
+    carichi = db.session.query(
+        PurchaseDeliveryNoteItem.product_id,
+        PurchaseDeliveryNoteItem.lotto,
+        PurchaseDeliveryNoteItem.data_scadenza,
+        func.sum(PurchaseDeliveryNoteItem.quantita).label('carico_kg'),
+        func.sum(PurchaseDeliveryNoteItem.colli).label('carico_colli')
+    ).group_by(
+        PurchaseDeliveryNoteItem.product_id,
+        PurchaseDeliveryNoteItem.lotto,
+        PurchaseDeliveryNoteItem.data_scadenza
+    ).all()
+
+    scarichi = db.session.query(
+        DeliveryNoteItem.product_id,
+        DeliveryNoteItem.lotto,
+        func.sum(DeliveryNoteItem.quantita).label('scarico_kg'),
+        func.sum(DeliveryNoteItem.colli).label('scarico_colli')
+    ).group_by(
+        DeliveryNoteItem.product_id,
+        DeliveryNoteItem.lotto
+    ).all()
+    scarichi_map = {(s.product_id, s.lotto): (s.scarico_kg or 0.0, s.scarico_colli or 0) for s in scarichi}
+
+    stock_list = []
+    today = date.today()
+    for c in carichi:
+        sc_kg, sc_colli = scarichi_map.get((c.product_id, c.lotto), (0.0, 0))
+        giacenza_kg = round(float(c.carico_kg or 0.0) - float(sc_kg), 2)
+        colli_disp = max(0, int(c.carico_colli or 0) - int(sc_colli))
+        if giacenza_kg > 0:
+            prod = db.session.get(Product, c.product_id)
+            giorni_a_scadere = (c.data_scadenza - today).days if c.data_scadenza else None
+            if giorni_a_scadere is not None:
+                if giorni_a_scadere <= 0:
+                    stato_scadenza = 'scaduto'
+                elif giorni_a_scadere <= 15:
+                    stato_scadenza = 'in_scadenza'
+                else:
+                    stato_scadenza = 'fresco'
+            else:
+                stato_scadenza = 'non_deperibile'
+
+            stock_list.append({
+                "product_id": c.product_id,
+                "product_codice": prod.codice if prod else "",
+                "product_descrizione": prod.descrizione if prod else "",
+                "lotto": c.lotto,
+                "data_scadenza": c.data_scadenza.isoformat() if c.data_scadenza else None,
+                "giorni_a_scadere": giorni_a_scadere,
+                "stato_scadenza": stato_scadenza,
+                "giacenza_kg": giacenza_kg,
+                "colli_disponibili": colli_disp
+            })
+
+    stock_list.sort(key=lambda s: (s['product_codice'], s['data_scadenza'] or '9999-12-31'))
+    return jsonify(stock_list), 200
+
+@app.route('/api/warehouse/fefo-suggestions', methods=['GET'])
+@require_auth()
+def get_fefo_suggestions():
+    prod_id = request.args.get('product_id')
+    if not prod_id:
+        return jsonify({"error": "product_id is required"}), 400
+
+    carichi = db.session.query(
+        PurchaseDeliveryNoteItem.product_id,
+        PurchaseDeliveryNoteItem.lotto,
+        PurchaseDeliveryNoteItem.data_scadenza,
+        func.sum(PurchaseDeliveryNoteItem.quantita).label('carico_kg'),
+        func.sum(PurchaseDeliveryNoteItem.colli).label('carico_colli')
+    ).filter_by(product_id=int(prod_id)).group_by(
+        PurchaseDeliveryNoteItem.product_id,
+        PurchaseDeliveryNoteItem.lotto,
+        PurchaseDeliveryNoteItem.data_scadenza
+    ).all()
+
+    scarichi = db.session.query(
+        DeliveryNoteItem.product_id,
+        DeliveryNoteItem.lotto,
+        func.sum(DeliveryNoteItem.quantita).label('scarico_kg'),
+        func.sum(DeliveryNoteItem.colli).label('scarico_colli')
+    ).filter_by(product_id=int(prod_id)).group_by(
+        DeliveryNoteItem.product_id,
+        DeliveryNoteItem.lotto
+    ).all()
+    scarichi_map = {(s.product_id, s.lotto): (s.scarico_kg or 0.0, s.scarico_colli or 0) for s in scarichi}
+
+    suggestions = []
+    today = date.today()
+    for c in carichi:
+        sc_kg, sc_colli = scarichi_map.get((c.product_id, c.lotto), (0.0, 0))
+        giacenza_kg = round(float(c.carico_kg or 0.0) - float(sc_kg), 2)
+        colli_disp = max(0, int(c.carico_colli or 0) - int(sc_colli))
+        if giacenza_kg > 0:
+            giorni = (c.data_scadenza - today).days if c.data_scadenza else None
+            suggestions.append({
+                "product_id": c.product_id,
+                "lotto": c.lotto,
+                "data_scadenza": c.data_scadenza.isoformat() if c.data_scadenza else None,
+                "giorni_a_scadere": giorni,
+                "giacenza_kg": giacenza_kg,
+                "colli_disponibili": colli_disp
+            })
+
+    suggestions.sort(key=lambda x: x['data_scadenza'] or '9999-12-31')
+    for idx, item in enumerate(suggestions):
+        item['consigliato_fefo'] = (idx == 0)
+
+    return jsonify(suggestions), 200
     
 @socketio.on('connect')
 def handle_connect():
