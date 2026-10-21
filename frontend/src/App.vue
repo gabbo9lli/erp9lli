@@ -133,7 +133,7 @@
           </template>
 
           <!-- LOGISTICA & MAGAZZINO -->
-          <template v-if="activeModules.warehouse || activeModules.pallets">
+          <template v-if="activeModules.warehouse || activeModules.pallets || activeModules.cmr">
             <q-item-label header class="text-weight-bold text-uppercase text-caption text-grey-7">
               Logistica & Magazzino
             </q-item-label>
@@ -157,6 +157,13 @@
                 <q-icon name="layers" />
               </q-item-section>
               <q-item-section>Interscambio Pallet (L.182)</q-item-section>
+            </q-item>
+
+            <q-item v-if="activeModules.cmr" clickable v-ripple to="/cmr" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="public" />
+              </q-item-section>
+              <q-item-section>Lettere di Vettura (CMR)</q-item-section>
             </q-item>
 
             <q-separator class="q-my-sm" />
@@ -263,7 +270,8 @@ const activeModules = ref({
   invoicing: true,
   accounting: true,
   warehouse: true,
-  pallets: true
+  pallets: true,
+  cmr: true
 })
 
 const fetchModules = async () => {

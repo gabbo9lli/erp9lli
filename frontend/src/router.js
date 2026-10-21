@@ -13,6 +13,7 @@ import Orders from './components/Orders.vue'
 import Purchases from './components/Purchases.vue'
 import WarehouseStock from './components/WarehouseStock.vue'
 import Pallets from './components/Pallets.vue'
+import CmrManagement from './components/CmrManagement.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -27,6 +28,7 @@ const routes = [
   { path: '/purchases', component: Purchases, meta: { requiresAuth: true } },
   { path: '/warehouse', component: WarehouseStock, meta: { requiresAuth: true } },
   { path: '/pallets', component: Pallets, meta: { requiresAuth: true } },
+  { path: '/cmr', component: CmrManagement, meta: { requiresAuth: true } },
   { path: '/invoices', component: Invoices, meta: { requiresAuth: true } },
   { path: '/accounting', component: Accounting, meta: { requiresAuth: true } },
   { path: '/database', component: DatabaseExplorer, meta: { requiresAuth: true } },

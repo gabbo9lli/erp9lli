@@ -17,6 +17,8 @@ from .purchase_delivery_note_item import PurchaseDeliveryNoteItem
 from .pallet_type import PalletType
 from .pallet_receipt import PalletReceipt
 from .pallet_receipt_item import PalletReceiptItem
+from .cmr_document import CmrDocument
+from .cmr_item import CmrItem
 
 __all__ = [
     "db",
@@ -38,4 +40,6 @@ __all__ = [
     "PalletType",
     "PalletReceipt",
     "PalletReceiptItem",
+    "CmrDocument",
+    "CmrItem",
 ]

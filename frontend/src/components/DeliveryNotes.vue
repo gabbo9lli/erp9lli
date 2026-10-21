@@ -107,6 +107,17 @@
             icon="delete" 
             @click="deleteDdt(props.row)" 
           />
+          <q-btn 
+            v-if="props.row.cliente?.nazione && props.row.cliente?.nazione !== 'IT'" 
+            color="indigo" 
+            dense 
+            size="sm"
+            icon="public" 
+            label="CMR" 
+            class="q-ml-xs"
+            @click="generateCmr(props.row)" 
+            title="Emetti Lettera di Vettura CMR Export"
+          />
         </q-td>
       </template>
     </q-table>
@@ -539,6 +550,17 @@ const deleteDdt = async (ddt) => {
       await fetchDdts()
     } catch (err) {
       alert(err.response?.data?.error || 'Errore durante l\'eliminazione')
+    }
+  }
+}
+
+const generateCmr = async (row) => {
+  if (confirm(`Emettere la Lettera di Vettura Internazionale CMR per il DDT ${row.numero_completo}?`)) {
+    try {
+      const res = await axios.post(`/api/cmr/from-ddt/${row.id}`)
+      alert(`Lettera di Vettura ${res.data.numero_completo} emessa con successo per ${row.cliente?.ragione_sociale || 'cliente'}!`)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Errore durante la generazione del CMR')
     }
   }
 }

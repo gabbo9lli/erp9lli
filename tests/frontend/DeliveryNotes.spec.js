@@ -118,4 +118,64 @@ describe('DeliveryNotes.vue', () => {
     expect(wrapper.vm.fefoSuggestions.length).toBe(1)
     expect(wrapper.vm.fefoSuggestions[0].lotto).toBe('LOTTO-FEFO-1')
   })
+
+  it('displays CMR button for foreign clients', async () => {
+    const mockDdts = [
+      {
+        id: 2,
+        numero: 2,
+        anno: 2026,
+        numero_completo: 'DDT-2026-0002',
+        data_documento: '2026-10-21',
+        cliente: { ragione_sociale: "Bio c' Bon Bruxelles", nazione: 'BE' },
+        colli_totali: 20,
+        peso_totale_netto: 200.0,
+        totale_imponibile: 500.0,
+        stato: 'confermato'
+      }
+    ]
+
+    vi.spyOn(axios, 'get').mockImplementation((url) => {
+      if (url.includes('/api/delivery-notes')) {
+        return Promise.resolve({ data: mockDdts })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    const wrapper = mount(DeliveryNotes, {
+      global: {
+        stubs: {
+          'q-table': {
+            props: ['rows'],
+            template: `
+              <div class="q-table-stub">
+                <div v-for="row in rows" :key="row.id" class="row-stub">
+                  <span>{{ row.numero_completo }}</span>
+                  <button v-if="row.cliente?.nazione && row.cliente?.nazione !== 'IT'" class="btn-cmr">CMR</button>
+                </div>
+              </div>
+            `
+          },
+          'q-btn': true,
+          'q-btn-toggle': true,
+          'q-input': true,
+          'q-icon': true,
+          'q-dialog': true,
+          'q-card': true,
+          'q-card-section': true,
+          'q-card-actions': true,
+          'q-space': true,
+          'q-chip': true,
+          'q-badge': true,
+          'q-select': true,
+          'q-separator': true,
+          'q-tooltip': true
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.btn-cmr').exists()).toBe(true)
+    expect(wrapper.find('.btn-cmr').text()).toBe('CMR')
+  })
 })
