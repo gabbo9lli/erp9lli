@@ -50,8 +50,9 @@ def seed_default_channels_and_categories():
     seed_default_event_types()
 
 def seed_default_event_types():
-    if EventType.query.count() == 0:
-        for et in DEFAULT_EVENT_TYPES:
+    for et in DEFAULT_EVENT_TYPES:
+        existing = EventType.query.filter_by(codice=et["codice"]).first()
+        if not existing:
             ch = EventChannel.query.filter_by(codice=et["channel"]).first()
             cat = EventCategory.query.filter_by(codice=et["category"]).first()
             if ch:
@@ -64,7 +65,7 @@ def seed_default_event_types():
                     modalita_esecuzione=et["modalita"],
                     coda_nome=et["coda"]
                 ))
-        db.session.commit()
+    db.session.commit()
 
 def get_redis_connection():
     try:
@@ -124,6 +125,11 @@ def _run_async_event(app, event_id, target_func=None):
             event.stato = 'errore'
             event.note_esito = str(e)
             db.session.commit()
+
+def _run_rq_event_job(event_id):
+    from app import app
+    with app.app_context():
+        _run_async_event(app, event_id, target_func=None)
 
 def dispatch_event(
     event_type_code=None,
@@ -209,7 +215,7 @@ def dispatch_event(
         if redis_conn and not app.config.get("TESTING"):
             try:
                 rq_queue = Queue(coda_nome or 'default', connection=redis_conn)
-                job = rq_queue.enqueue(_run_async_event, app, event.id, target_func)
+                job = rq_queue.enqueue(_run_rq_event_job, event.id)
                 event.rq_job_id = job.id
                 db.session.commit()
                 return event

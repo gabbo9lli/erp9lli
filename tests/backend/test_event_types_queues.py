@@ -126,3 +126,19 @@ def test_api_redis_queues_stats(client):
     assert 'emails' in queue_names
     assert 'batch' in queue_names
     assert 'default' in queue_names
+
+def test_api_event_types_policy_validation_rejected(client):
+    admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
+    client.get('/api/me', headers=admin_headers)
+
+    res_list = client.get('/api/events/types', headers=admin_headers)
+    types = res_list.get_json()
+    first_id = types[0]['id']
+
+    # Invalid modalita
+    bad_res1 = client.put(f'/api/events/types/{first_id}', json={"modalita_esecuzione": "invalid_mode"}, headers=admin_headers)
+    assert bad_res1.status_code == 400
+
+    # Invalid queue
+    bad_res2 = client.put(f'/api/events/types/{first_id}', json={"coda_nome": "unknown_queue"}, headers=admin_headers)
+    assert bad_res2.status_code == 400

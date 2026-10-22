@@ -2727,8 +2727,12 @@ def update_event_type_policy(tid):
         return jsonify({"error": "Tipo evento non trovato"}), 404
     data = request.get_json() or {}
     if 'modalita_esecuzione' in data:
+        if data['modalita_esecuzione'] not in ['sincrono', 'asincrono']:
+            return jsonify({"error": "modalita_esecuzione non valida (ammessi: sincrono, asincrono)"}), 400
         et.modalita_esecuzione = data['modalita_esecuzione']
     if 'coda_nome' in data:
+        if data['coda_nome'] not in ['critical', 'emails', 'batch', 'default']:
+            return jsonify({"error": "coda_nome non valida (ammessi: critical, emails, batch, default)"}), 400
         et.coda_nome = data['coda_nome']
     if 'channel_id' in data:
         et.channel_id = data['channel_id']
