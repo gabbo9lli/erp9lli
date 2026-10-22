@@ -9,4 +9,5 @@ gevent
 flask-socketio
 gevent-websocket
 redis
+rq>=1.15.0
 pytest>=7.0.0

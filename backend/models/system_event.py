@@ -5,6 +5,9 @@ class SystemEvent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     channel_id = db.Column(db.Integer, db.ForeignKey('event_channel.id'), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('event_category.id'), nullable=True)
+    event_type_id = db.Column(db.Integer, db.ForeignKey('event_type.id'), nullable=True)
+    coda_nome = db.Column(db.String(30), nullable=True)
+    rq_job_id = db.Column(db.String(50), nullable=True)
     livello = db.Column(db.String(20), nullable=False, default='info') # info, success, warning, error
     azione = db.Column(db.String(50), nullable=False) # emissione_ddt, sollecito_pallet, etc.
     titolo = db.Column(db.String(200), nullable=False)
@@ -29,6 +32,7 @@ class SystemEvent(db.Model):
 
     channel = db.relationship('EventChannel', backref='events')
     category = db.relationship('EventCategory', backref='events')
+    event_type = db.relationship('EventType', backref='events')
     user = db.relationship('User', backref='events')
     partner = db.relationship('Partner', backref='events')
 
@@ -43,6 +47,10 @@ class SystemEvent(db.Model):
             "category_nome": self.category.nome if self.category else None,
             "category_colore": self.category.colore_badge if self.category else 'primary',
             "category_icona": self.category.icona if self.category else 'info',
+            "event_type_id": self.event_type_id,
+            "event_type_codice": self.event_type.codice if self.event_type else None,
+            "coda_nome": self.coda_nome,
+            "rq_job_id": self.rq_job_id,
             "livello": self.livello,
             "azione": self.azione,
             "titolo": self.titolo,

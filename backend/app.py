@@ -8,7 +8,7 @@ from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
 import io
 import csv
-from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem, EventChannel, EventCategory, SystemEvent
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem, EventChannel, EventCategory, EventType, SystemEvent
 from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime, date, timedelta
@@ -17,7 +17,7 @@ import re
 from functools import wraps
 from flask_socketio import SocketIO, emit
 from services.sdi_service import generate_sdi_xml, validate_sdi_invoice
-from services.event_dispatcher import dispatch_event, seed_default_channels_and_categories
+from services.event_dispatcher import dispatch_event, seed_default_channels_and_categories, get_redis_connection
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -2687,6 +2687,80 @@ def get_event_categories():
     seed_default_channels_and_categories()
     categories = EventCategory.query.filter_by(attivo=True).order_by(EventCategory.codice.asc()).all()
     return jsonify([cat.to_dict() for cat in categories]), 200
+
+@app.route('/api/events/types', methods=['GET'])
+@require_auth()
+def get_event_types():
+    seed_default_channels_and_categories()
+    types = EventType.query.order_by(EventType.codice.asc()).all()
+    return jsonify([t.to_dict() for t in types]), 200
+
+@app.route('/api/events/types', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_event_type():
+    data = request.get_json() or {}
+    codice = (data.get('codice') or '').strip().upper()
+    nome = (data.get('nome') or '').strip()
+    channel_id = data.get('channel_id')
+    if not codice or not nome or not channel_id:
+        return jsonify({"error": "codice, nome e channel_id sono obbligatori"}), 400
+    et = EventType(
+        codice=codice,
+        nome=nome,
+        descrizione=data.get('descrizione'),
+        channel_id=channel_id,
+        category_id=data.get('category_id'),
+        modalita_esecuzione=data.get('modalita_esecuzione', 'sincrono'),
+        coda_nome=data.get('coda_nome', 'default'),
+        livello_default=data.get('livello_default', 'info'),
+        attivo=data.get('attivo', True)
+    )
+    db.session.add(et)
+    db.session.commit()
+    return jsonify(et.to_dict()), 201
+
+@app.route('/api/events/types/<int:tid>', methods=['PUT'])
+@require_auth(roles=['Admin'])
+def update_event_type_policy(tid):
+    et = db.session.get(EventType, tid)
+    if not et:
+        return jsonify({"error": "Tipo evento non trovato"}), 404
+    data = request.get_json() or {}
+    if 'modalita_esecuzione' in data:
+        et.modalita_esecuzione = data['modalita_esecuzione']
+    if 'coda_nome' in data:
+        et.coda_nome = data['coda_nome']
+    if 'channel_id' in data:
+        et.channel_id = data['channel_id']
+    if 'category_id' in data:
+        et.category_id = data['category_id']
+    if 'attivo' in data:
+        et.attivo = data['attivo']
+    db.session.commit()
+    return jsonify(et.to_dict()), 200
+
+@app.route('/api/events/queues', methods=['GET'])
+@require_auth()
+def get_redis_queues_stats():
+    queue_names = ['critical', 'emails', 'batch', 'default']
+    queues_stats = []
+    redis_conn = get_redis_connection()
+    from rq import Queue
+
+    for q_name in queue_names:
+        job_count = 0
+        if redis_conn:
+            try:
+                q = Queue(q_name, connection=redis_conn)
+                job_count = len(q)
+            except Exception:
+                pass
+        queues_stats.append({
+            "name": q_name,
+            "count": job_count,
+            "active": redis_conn is not None
+        })
+    return jsonify({"queues": queues_stats}), 200
 
 @app.route('/api/events', methods=['GET'])
 @require_auth()

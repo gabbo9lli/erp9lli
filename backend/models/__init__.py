@@ -21,6 +21,7 @@ from .cmr_document import CmrDocument
 from .cmr_item import CmrItem
 from .event_channel import EventChannel
 from .event_category import EventCategory
+from .event_type import EventType
 from .system_event import SystemEvent
 
 __all__ = [
@@ -47,5 +48,6 @@ __all__ = [
     "CmrItem",
     "EventChannel",
     "EventCategory",
+    "EventType",
     "SystemEvent",
 ]

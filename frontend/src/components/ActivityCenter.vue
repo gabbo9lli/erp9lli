@@ -16,6 +16,7 @@
       <q-tab name="queue" label="Coda Task in Background" icon="pending_actions" />
       <q-tab name="outbox" label="Comunicazioni & Email" icon="forward_to_inbox" />
       <q-tab name="channels" label="Anagrafica Canali" icon="settings_input_component" />
+      <q-tab name="types" label="Catalogo Eventi & Code" icon="tune" />
     </q-tabs>
 
     <q-separator class="q-mb-md" />
@@ -197,6 +198,67 @@
           </template>
         </q-table>
       </q-tab-panel>
+
+      <!-- TAB 5: CATALOGO EVENTI & CODE REDIS -->
+      <q-tab-panel name="types" class="q-pa-none">
+        <!-- Widget Monitor Code Redis -->
+        <div class="row q-col-gutter-sm q-mb-md">
+          <div v-for="q in queues" :key="q.name" class="col-12 col-sm-6 col-md-3">
+            <div class="bg-white q-pa-sm rounded-borders border-grey shadow-1">
+              <div class="text-caption text-uppercase text-grey-7">Coda: <strong>{{ q.name }}</strong></div>
+              <div class="row items-center justify-between q-mt-xs">
+                <span class="text-h6 text-weight-bold" :class="q.count > 0 ? 'text-primary' : 'text-grey-6'">
+                  {{ q.count }} job
+                </span>
+                <q-badge :color="q.active ? 'positive' : 'grey'">
+                  {{ q.active ? 'REDIS ATTIVO' : 'MOCK' }}
+                </q-badge>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row justify-between items-center q-mb-sm">
+          <div>
+            <div class="text-subtitle1 text-weight-bold">Policy di Esecuzione Eventi di Sistema</div>
+            <div class="text-caption text-grey-7">Configura se l'evento deve essere Sincrono o Asincrono e su quale Coda Redis instradarlo</div>
+          </div>
+        </div>
+
+        <q-table
+          :rows="eventTypes"
+          :columns="eventTypeColumns"
+          row-key="id"
+          flat
+          bordered
+        >
+          <template v-slot:body-cell-modalita="props">
+            <q-td :props="props" align="center">
+              <q-select
+                v-model="props.row.modalita_esecuzione"
+                :options="['sincrono', 'asincrono']"
+                dense
+                outlined
+                style="min-width: 140px"
+                @update:model-value="updatePolicy(props.row)"
+              />
+            </q-td>
+          </template>
+
+          <template v-slot:body-cell-coda="props">
+            <q-td :props="props" align="center">
+              <q-select
+                v-model="props.row.coda_nome"
+                :options="['critical', 'emails', 'batch', 'default']"
+                dense
+                outlined
+                style="min-width: 130px"
+                @update:model-value="updatePolicy(props.row)"
+              />
+            </q-td>
+          </template>
+        </q-table>
+      </q-tab-panel>
     </q-tab-panels>
 
     <!-- DIALOG DETTAGLIO EVENTO -->
@@ -321,6 +383,46 @@ const channelColumns = [
   { name: 'attivo', label: 'Stato', align: 'center' }
 ]
 
+const eventTypes = ref([])
+const queues = ref([])
+
+const eventTypeColumns = [
+  { name: 'codice', label: 'Codice Evento', field: 'codice', align: 'left', sortable: true },
+  { name: 'nome', label: 'Nome Descrittivo', field: 'nome', align: 'left' },
+  { name: 'modalita', label: 'Modalità Esecuzione', align: 'center' },
+  { name: 'coda', label: 'Coda Redis', align: 'center' }
+]
+
+const fetchEventTypes = async () => {
+  try {
+    const res = await axios.get('/api/events/types')
+    eventTypes.value = res.data
+  } catch (err) {
+    console.error('Error fetching event types:', err)
+  }
+}
+
+const fetchQueues = async () => {
+  try {
+    const res = await axios.get('/api/events/queues')
+    queues.value = res.data.queues || []
+  } catch (err) {
+    console.error('Error fetching queues:', err)
+  }
+}
+
+const updatePolicy = async (row) => {
+  try {
+    await axios.put(`/api/events/types/${row.id}`, {
+      modalita_esecuzione: row.modalita_esecuzione,
+      coda_nome: row.coda_nome
+    })
+    fetchQueues()
+  } catch (err) {
+    alert(err.response?.data?.error || 'Errore salvataggio policy')
+  }
+}
+
 const getStatusColor = (st) => {
   if (st === 'completato') return 'positive'
   if (st === 'test') return 'teal'
@@ -356,6 +458,8 @@ const fetchChannels = async () => {
 const fetchData = () => {
   fetchEvents()
   fetchChannels()
+  fetchEventTypes()
+  fetchQueues()
 }
 
 const viewEvent = (ev) => {
