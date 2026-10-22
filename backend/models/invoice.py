@@ -18,7 +18,14 @@ class Invoice(db.Model):
     stato = db.Column(db.String(20), nullable=False, default='emessa') # bozza, emessa, inviata_sdi, saldata
     note = db.Column(db.Text, nullable=True)
 
+    # Campi per Note di Credito (TD04) e Resi Merci
+    invoice_origine_id = db.Column(db.Integer, db.ForeignKey('invoice.id'), nullable=True)
+    invoice_origine_numero = db.Column(db.String(30), nullable=True)
+    causale_storno = db.Column(db.Text, nullable=True)
+    reintegro_magazzino = db.Column(db.Boolean, nullable=True, default=False)
+
     cliente = db.relationship('Partner', backref='fatture')
+    invoice_origine = db.relationship('Invoice', remote_side=[id], backref=db.backref('note_credito', lazy='dynamic'))
     items = db.relationship('InvoiceItem', backref='invoice', cascade='all, delete-orphan', passive_deletes=True)
     installments = db.relationship('InvoiceInstallment', backref='invoice', cascade='all, delete-orphan', passive_deletes=True, order_by='InvoiceInstallment.numero_rata')
 
@@ -40,6 +47,10 @@ class Invoice(db.Model):
             "castelletto_iva": self.castelletto_iva,
             "stato": self.stato,
             "note": self.note,
+            "invoice_origine_id": self.invoice_origine_id,
+            "invoice_origine_numero": self.invoice_origine_numero,
+            "causale_storno": self.causale_storno,
+            "reintegro_magazzino": self.reintegro_magazzino,
             "items": [item.to_dict() for item in self.items],
             "installments": [inst.to_dict() for inst in self.installments]
         }

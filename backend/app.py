@@ -1042,6 +1042,10 @@ def get_invoices():
     if stato and stato != 'tutti':
         query = query.filter_by(stato=stato)
 
+    tipo = request.args.get('tipo')
+    if tipo and tipo != 'tutti':
+        query = query.filter_by(tipo_documento=tipo)
+
     cliente_id = request.args.get('cliente_id')
     if cliente_id:
         query = query.filter_by(cliente_id=int(cliente_id))
@@ -1060,6 +1064,152 @@ def get_invoices():
 
     invoices = query.order_by(Invoice.data_documento.desc(), Invoice.numero.desc()).all()
     return jsonify([inv.to_dict() for inv in invoices]), 200
+
+def get_next_credit_note_number(anno):
+    max_num = db.session.query(func.max(Invoice.numero))\
+        .filter(Invoice.anno == anno, Invoice.tipo_documento == 'TD04')\
+        .scalar()
+    return (max_num or 0) + 1
+
+@app.route('/api/invoices/<int:iid>/credit-note', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_credit_note_from_invoice(iid):
+    inv = db.session.get(Invoice, iid)
+    if not inv:
+        return jsonify({"error": "Fattura d'origine non trovata"}), 404
+    if inv.tipo_documento == 'TD04':
+        return jsonify({"error": "Impossibile emettere una nota di credito a storno di un'altra nota di credito"}), 400
+
+    data = request.get_json() or {}
+    items_to_reverse = data.get('items', [])
+    if not items_to_reverse:
+        return jsonify({"error": "Almeno una riga da stornare richiesta"}), 400
+
+    today = date.today()
+    anno = today.year
+    numero = get_next_credit_note_number(anno)
+    numero_completo = f"NC-{anno}-{numero:04d}"
+
+    causale = data.get('causale_storno') or f"Storno parziale su fattura {inv.numero_completo}"
+    compensa_scadenzario = data.get('compensa_scadenzario', True)
+    reintegro_magazzino = data.get('reintegro_magazzino', False)
+
+    items_map = {it.id: it for it in inv.items}
+    nc_items = []
+    castelletto = {}
+    totale_imponibile = 0.0
+    totale_imposta = 0.0
+
+    for it_rev in items_to_reverse:
+        orig_item_id = it_rev.get('invoice_item_id')
+        orig_item = items_map.get(orig_item_id)
+        if not orig_item:
+            return jsonify({"error": f"Riga fattura {orig_item_id} non trovata"}), 400
+
+        qta_storno = float(it_rev.get('quantita_stornata', orig_item.quantita))
+        if qta_storno <= 0 or qta_storno > orig_item.quantita:
+            return jsonify({"error": f"Quantità da stornare non valida ({qta_storno})"}), 400
+
+        prezzo_unit = float(orig_item.prezzo_unitario)
+        aliq = int(orig_item.aliquota_iva or 0)
+        imp_riga = round(qta_storno * prezzo_unit, 2)
+        imposta_riga = round(imp_riga * (aliq / 100.0), 2)
+
+        totale_imponibile += imp_riga
+        totale_imposta += imposta_riga
+
+        aliq_key = str(aliq)
+        if aliq_key not in castelletto:
+            castelletto[aliq_key] = {"imponibile": 0.0, "imposta": 0.0}
+        castelletto[aliq_key]["imponibile"] += imp_riga
+        castelletto[aliq_key]["imposta"] += imposta_riga
+
+        nc_items.append(InvoiceItem(
+            product_id=orig_item.product_id,
+            delivery_note_id=orig_item.delivery_note_id,
+            descrizione=f"Storno: {orig_item.descrizione}",
+            unita_misura=orig_item.unita_misura,
+            colli=int(orig_item.colli or 1),
+            quantita=qta_storno,
+            prezzo_unitario=prezzo_unit,
+            aliquota_iva=aliq,
+            imponibile_riga=imp_riga,
+            lotto=orig_item.lotto,
+            data_scadenza=orig_item.data_scadenza
+        ))
+
+        if reintegro_magazzino and orig_item.lotto:
+            p_reso = PurchaseDeliveryNote(
+                numero_documento_fornitore=f"RESO-{numero_completo}",
+                fornitore_id=inv.cliente_id,
+                data_ricezione=today,
+                note=f"Reso merci da cliente con Nota di Credito {numero_completo} (storno {inv.numero_completo})",
+                items=[PurchaseDeliveryNoteItem(
+                    product_id=orig_item.product_id,
+                    descrizione=f"Reso: {orig_item.descrizione}",
+                    colli=1,
+                    quantita=qta_storno,
+                    prezzo_unitario=prezzo_unit,
+                    aliquota_iva=aliq,
+                    lotto=orig_item.lotto,
+                    data_scadenza=orig_item.data_scadenza or today
+                )]
+            )
+            db.session.add(p_reso)
+
+    totale_imponibile = round(totale_imponibile, 2)
+    totale_imposta = round(totale_imposta, 2)
+    totale_nc = round(totale_imponibile + totale_imposta, 2)
+
+    for k in castelletto:
+        castelletto[k]["imponibile"] = round(castelletto[k]["imponibile"], 2)
+        castelletto[k]["imposta"] = round(castelletto[k]["imposta"], 2)
+
+    nc = Invoice(
+        numero=numero,
+        anno=anno,
+        numero_completo=numero_completo,
+        tipo_documento='TD04',
+        data_documento=today,
+        cliente_id=inv.cliente_id,
+        condizioni_pagamento=inv.condizioni_pagamento,
+        esigibilita_iva=inv.esigibilita_iva,
+        totale_imponibile=totale_imponibile,
+        totale_imposta=totale_imposta,
+        totale_fattura=totale_nc,
+        castelletto_iva=castelletto,
+        stato='emessa',
+        note=causale,
+        invoice_origine_id=inv.id,
+        invoice_origine_numero=inv.numero_completo,
+        causale_storno=causale,
+        reintegro_magazzino=reintegro_magazzino,
+        items=nc_items
+    )
+    db.session.add(nc)
+
+    if compensa_scadenzario and inv.installments:
+        residuo_storno = totale_nc
+        sorted_installments = sorted(inv.installments, key=lambda x: x.data_scadenza)
+        for inst in sorted_installments:
+            if inst.stato == 'aperta' and residuo_storno > 0:
+                if inst.importo <= residuo_storno:
+                    residuo_storno = round(residuo_storno - inst.importo, 2)
+                    inst.importo = 0.0
+                    inst.stato = 'incassata'
+                else:
+                    inst.importo = round(inst.importo - residuo_storno, 2)
+                    residuo_storno = 0.0
+
+        if all(inst.stato == 'incassata' or inst.importo <= 0.0 for inst in inv.installments):
+            inv.stato = 'saldata'
+
+    try:
+        db.session.commit()
+        return jsonify(nc.to_dict()), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
 
 @app.route('/api/invoices/<int:iid>', methods=['GET'])
 @require_auth()

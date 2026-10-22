@@ -62,8 +62,15 @@
         >
           <template v-slot:body-cell-numero_completo="props">
             <q-td :props="props">
-              <span class="text-weight-bold text-primary">{{ props.row.numero_completo }}</span>
-              <q-badge color="grey-3" text-color="grey-9" class="q-ml-sm">{{ props.row.tipo_documento }}</q-badge>
+              <span class="text-weight-bold" :class="props.row.tipo_documento === 'TD04' ? 'text-deep-orange-9' : 'text-primary'">
+                {{ props.row.numero_completo }}
+              </span>
+              <q-badge :color="props.row.tipo_documento === 'TD04' ? 'deep-orange' : 'grey-3'" :text-color="props.row.tipo_documento === 'TD04' ? 'white' : 'grey-9'" class="q-ml-sm">
+                {{ props.row.tipo_documento === 'TD04' ? 'TD04 - NOTA DI CREDITO' : props.row.tipo_documento }}
+              </q-badge>
+              <div v-if="props.row.invoice_origine_numero" class="text-caption text-grey-8">
+                Storno di: <strong>{{ props.row.invoice_origine_numero }}</strong>
+              </div>
             </q-td>
           </template>
 
@@ -76,7 +83,9 @@
 
           <template v-slot:body-cell-totali="props">
             <q-td :props="props" align="right">
-              <div class="text-weight-bolder text-subtitle2">€ {{ Number(props.row.totale_fattura).toFixed(2) }}</div>
+              <div class="text-weight-bolder text-subtitle2" :class="props.row.tipo_documento === 'TD04' ? 'text-deep-orange' : ''">
+                {{ props.row.tipo_documento === 'TD04' ? '-' : '' }}€ {{ Number(props.row.totale_fattura).toFixed(2) }}
+              </div>
               <div class="text-caption text-grey-7">Imp: € {{ Number(props.row.totale_imponibile).toFixed(2) }} + IVA € {{ Number(props.row.totale_imposta).toFixed(2) }}</div>
             </q-td>
           </template>
@@ -84,7 +93,7 @@
           <template v-slot:body-cell-stato="props">
             <q-td :props="props" align="center">
               <q-chip 
-                :color="props.row.stato === 'saldata' ? 'positive' : 'primary'" 
+                :color="props.row.stato === 'saldata' ? 'positive' : (props.row.tipo_documento === 'TD04' ? 'deep-orange' : 'primary')" 
                 text-color="white" 
                 dense 
                 size="sm"
@@ -107,6 +116,16 @@
                 label="XML SDI" 
                 @click="downloadXml(props.row)"
                 title="Scarica XML Fattura Elettronica"
+              />
+              <q-btn 
+                v-if="props.row.tipo_documento !== 'TD04'" 
+                color="deep-orange" 
+                dense 
+                size="sm" 
+                icon="assignment_return" 
+                label="Nota di Credito" 
+                @click="openCreditNoteDialog(props.row)"
+                title="Emetti Nota di Credito (TD04)"
               />
             </q-td>
           </template>
@@ -306,6 +325,63 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- DIALOG EMISSIONE NOTA DI CREDITO (TD04) -->
+    <q-dialog v-model="creditNoteDialogOpen" persistent full-width>
+      <q-card style="max-width: 900px; margin: auto">
+        <q-card-section class="row items-center justify-between bg-deep-orange text-white q-py-sm">
+          <div class="text-h6">
+            <q-icon name="assignment_return" class="q-mr-sm" />
+            Emissione Nota di Credito (TD04) a storno di {{ selectedInvoiceForNc?.numero_completo }}
+          </div>
+          <q-btn icon="close" flat round dense v-close-popup text-color="white" />
+        </q-card-section>
+        <q-separator />
+
+        <q-card-section class="q-gutter-md">
+          <div class="row q-col-gutter-sm">
+            <div class="col-12 col-md-8">
+              <q-input v-model="creditNoteForm.causale_storno" label="Motivo / Causale dello Storno *" outlined dense />
+            </div>
+            <div class="col-6 col-md-4">
+              <q-toggle v-model="creditNoteForm.compensa_scadenzario" label="Compensa Rate Scadenzario" color="primary" />
+            </div>
+          </div>
+          <div class="row q-col-gutter-sm">
+            <div class="col-12">
+              <q-toggle v-model="creditNoteForm.reintegro_magazzino" label="Reintegra lotti biologici resi a magazzino (FEFO)" color="secondary" />
+            </div>
+          </div>
+
+          <div class="text-subtitle2 text-weight-bold q-mt-md">Righe Fattura da Stornare</div>
+          <div v-for="it in creditNoteForm.items" :key="it.invoice_item_id" class="row q-col-gutter-xs items-center q-pa-sm bg-grey-1 rounded-borders q-mb-xs">
+            <div class="col-12 col-md-6">
+              <strong>{{ it.descrizione }}</strong>
+              <div class="text-caption">Fatturati: {{ it.quantita_massima }} {{ it.unita_misura }} a € {{ Number(it.prezzo_unitario).toFixed(2) }} (IVA {{ it.aliquota_iva }}%)</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <q-input v-model.number="it.quantita_stornata" type="number" label="Q.tà da stornare" outlined dense />
+            </div>
+            <div class="col-6 col-md-3 text-right">
+              <div class="text-weight-bold">€ {{ (it.quantita_stornata * it.prezzo_unitario).toFixed(2) }}</div>
+              <div class="text-caption">+ IVA: € {{ (it.quantita_stornata * it.prezzo_unitario * (it.aliquota_iva / 100)).toFixed(2) }}</div>
+            </div>
+          </div>
+        </q-card-section>
+
+        <q-separator />
+        <q-card-actions align="right" class="q-pa-md">
+          <q-btn flat label="Annulla" color="grey" v-close-popup />
+          <q-btn 
+            color="deep-orange" 
+            icon="check" 
+            label="Conferma ed Emetti Nota di Credito" 
+            :loading="issuingCreditNote"
+            @click="submitCreditNote"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
@@ -480,6 +556,61 @@ const payInstallment = async (inst) => {
 const downloadXml = (inv) => {
   if (!inv) return
   window.open(`/api/invoices/${inv.id}/xml`, '_blank')
+}
+
+const creditNoteDialogOpen = ref(false)
+const selectedInvoiceForNc = ref(null)
+const issuingCreditNote = ref(false)
+const creditNoteForm = ref({
+  causale_storno: '',
+  compensa_scadenzario: true,
+  reintegro_magazzino: false,
+  items: []
+})
+
+const openCreditNoteDialog = (inv) => {
+  selectedInvoiceForNc.value = inv
+  creditNoteForm.value = {
+    causale_storno: `Storno parziale su fattura ${inv.numero_completo}`,
+    compensa_scadenzario: true,
+    reintegro_magazzino: false,
+    items: (inv.items || []).map(it => ({
+      invoice_item_id: it.id,
+      descrizione: it.descrizione,
+      quantita_massima: it.quantita,
+      unita_misura: it.unita_misura,
+      prezzo_unitario: it.prezzo_unitario,
+      aliquota_iva: it.aliquota_iva,
+      quantita_stornata: it.quantita
+    }))
+  }
+  creditNoteDialogOpen.value = true
+}
+
+const submitCreditNote = async () => {
+  issuingCreditNote.value = true
+  try {
+    const payload = {
+      causale_storno: creditNoteForm.value.causale_storno,
+      compensa_scadenzario: creditNoteForm.value.compensa_scadenzario,
+      reintegro_magazzino: creditNoteForm.value.reintegro_magazzino,
+      items: creditNoteForm.value.items
+        .filter(it => it.quantita_stornata > 0)
+        .map(it => ({
+          invoice_item_id: it.invoice_item_id,
+          quantita_stornata: it.quantita_stornata
+        }))
+    }
+    const res = await axios.post(`/api/invoices/${selectedInvoiceForNc.value.id}/credit-note`, payload)
+    creditNoteDialogOpen.value = false
+    alert(`Nota di Credito ${res.data.numero_completo} emessa con successo!`)
+    await fetchInvoices()
+    await fetchInstallments()
+  } catch (err) {
+    alert(err.response?.data?.error || 'Errore durante emissione nota di credito')
+  } finally {
+    issuingCreditNote.value = false
+  }
 }
 
 onMounted(() => {

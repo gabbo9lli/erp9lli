@@ -196,6 +196,14 @@ def generate_sdi_xml(invoice: Invoice, cedente: dict = None) -> tuple[str, str]:
         for num_linea in ddt_info["linee"]:
             ET.SubElement(dati_ddt, "RiferimentoNumeroLinea").text = str(num_linea)
 
+    # Blocchi DatiFattureCollegate per Note di Credito (TD04)
+    if (invoice.tipo_documento == 'TD04' or invoice.invoice_origine_id) and invoice.invoice_origine_numero:
+        dati_colleg = ET.SubElement(dati_gen, "DatiFattureCollegate")
+        ET.SubElement(dati_colleg, "IdDocumento").text = invoice.invoice_origine_numero
+        orig_date = invoice.invoice_origine.data_documento if invoice.invoice_origine else invoice.data_documento
+        if orig_date:
+            ET.SubElement(dati_colleg, "Data").text = orig_date.isoformat()
+
     # 2.2 Dati Beni e Servizi
     dati_beni = ET.SubElement(body, "DatiBeniServizi")
     nature_per_aliquota = {}
