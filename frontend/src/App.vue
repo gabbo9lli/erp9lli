@@ -213,6 +213,13 @@
             Sistema & Strumenti
           </q-item-label>
 
+          <q-item clickable v-ripple to="/activities" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="hub" />
+            </q-item-section>
+            <q-item-section>Attività, Code & Eventi</q-item-section>
+          </q-item>
+
           <q-item clickable v-ripple to="/users" active-class="text-primary bg-blue-1 text-weight-bold">
             <q-item-section avatar>
               <q-icon name="people" />

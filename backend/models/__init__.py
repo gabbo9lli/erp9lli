@@ -19,6 +19,9 @@ from .pallet_receipt import PalletReceipt
 from .pallet_receipt_item import PalletReceiptItem
 from .cmr_document import CmrDocument
 from .cmr_item import CmrItem
+from .event_channel import EventChannel
+from .event_category import EventCategory
+from .system_event import SystemEvent
 
 __all__ = [
     "db",
@@ -42,4 +45,7 @@ __all__ = [
     "PalletReceiptItem",
     "CmrDocument",
     "CmrItem",
+    "EventChannel",
+    "EventCategory",
+    "SystemEvent",
 ]

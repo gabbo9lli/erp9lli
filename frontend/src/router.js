@@ -14,6 +14,7 @@ import Purchases from './components/Purchases.vue'
 import WarehouseStock from './components/WarehouseStock.vue'
 import Pallets from './components/Pallets.vue'
 import CmrManagement from './components/CmrManagement.vue'
+import ActivityCenter from './components/ActivityCenter.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -31,6 +32,7 @@ const routes = [
   { path: '/cmr', component: CmrManagement, meta: { requiresAuth: true } },
   { path: '/invoices', component: Invoices, meta: { requiresAuth: true } },
   { path: '/accounting', component: Accounting, meta: { requiresAuth: true } },
+  { path: '/activities', component: ActivityCenter, meta: { requiresAuth: true } },
   { path: '/database', component: DatabaseExplorer, meta: { requiresAuth: true } },
   { path: '/settings', component: () => import('./components/Settings.vue'), meta: { requiresAuth: true }},
   { path: '/users2', redirect: '/users' },

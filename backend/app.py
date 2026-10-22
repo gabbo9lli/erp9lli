@@ -8,7 +8,7 @@ from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
 import io
 import csv
-from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem, EventChannel, EventCategory, SystemEvent
 from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime, date, timedelta
@@ -17,6 +17,7 @@ import re
 from functools import wraps
 from flask_socketio import SocketIO, emit
 from services.sdi_service import generate_sdi_xml, validate_sdi_invoice
+from services.event_dispatcher import dispatch_event, seed_default_channels_and_categories
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -2647,6 +2648,146 @@ def get_cmr_print_format(cid):
         "ha_allegato_righe": cmr.ha_allegato_righe
     }
     return jsonify(boxes), 200
+
+# ==========================================
+# EVENT BUS, AUDIT TRAIL & BACKGROUND TASKS
+# ==========================================
+
+@app.route('/api/events/channels', methods=['GET'])
+@require_auth()
+def get_event_channels():
+    seed_default_channels_and_categories()
+    channels = EventChannel.query.filter_by(attivo=True).order_by(EventChannel.codice.asc()).all()
+    return jsonify([c.to_dict() for c in channels]), 200
+
+@app.route('/api/events/channels', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_event_channel():
+    data = request.get_json() or {}
+    codice = (data.get('codice') or '').strip().upper()
+    nome = (data.get('nome') or '').strip()
+    if not codice or not nome:
+        return jsonify({"error": "codice e nome obbligatori"}), 400
+    ch = EventChannel(
+        codice=codice,
+        nome=nome,
+        descrizione=data.get('descrizione'),
+        tipo_dispatcher=data.get('tipo_dispatcher', 'internal'),
+        configurazione=data.get('configurazione'),
+        richiede_destinatario=data.get('richiede_destinatario', False),
+        attivo=data.get('attivo', True)
+    )
+    db.session.add(ch)
+    db.session.commit()
+    return jsonify(ch.to_dict()), 201
+
+@app.route('/api/events/categories', methods=['GET'])
+@require_auth()
+def get_event_categories():
+    seed_default_channels_and_categories()
+    categories = EventCategory.query.filter_by(attivo=True).order_by(EventCategory.codice.asc()).all()
+    return jsonify([cat.to_dict() for cat in categories]), 200
+
+@app.route('/api/events', methods=['GET'])
+@require_auth()
+def get_events():
+    seed_default_channels_and_categories()
+    query = SystemEvent.query
+    channel_codice = request.args.get('channel')
+    if channel_codice and channel_codice != 'tutti':
+        query = query.join(SystemEvent.channel).filter(EventChannel.codice == channel_codice)
+    stato = request.args.get('stato')
+    if stato and stato != 'tutti':
+        query = query.filter(SystemEvent.stato == stato)
+    search = request.args.get('search')
+    if search:
+        search_f = f"%{search}%"
+        query = query.filter((SystemEvent.titolo.ilike(search_f)) | (SystemEvent.azione.ilike(search_f)) | (SystemEvent.descrizione.ilike(search_f)))
+    is_async = request.args.get('is_async')
+    if is_async is not None:
+        query = query.filter(SystemEvent.is_async == (is_async.lower() == 'true'))
+
+    events = query.order_by(SystemEvent.data_creazione.desc()).limit(100).all()
+    return jsonify([ev.to_dict() for ev in events]), 200
+
+@app.route('/api/events/<int:eid>', methods=['GET'])
+@require_auth()
+def get_event_detail(eid):
+    ev = db.session.get(SystemEvent, eid)
+    if not ev:
+        return jsonify({"error": "Evento non trovato"}), 404
+    return jsonify(ev.to_dict()), 200
+
+@app.route('/api/events', methods=['POST'])
+@require_auth()
+def create_event_endpoint():
+    data = request.get_json() or {}
+    is_async = data.get('is_async', False)
+    ev = dispatch_event(
+        channel_code=data.get('channel_code', 'AUDIT'),
+        category_code=data.get('category_code', 'SISTEMA'),
+        azione=data.get('azione', 'custom_event'),
+        titolo=data.get('titolo', 'Evento Utente'),
+        descrizione=data.get('descrizione'),
+        payload_dati=data.get('payload_dati'),
+        destinatario_recapito=data.get('destinatario_recapito'),
+        partner_id=data.get('partner_id'),
+        entita_tipo=data.get('entita_tipo'),
+        entita_id=data.get('entita_id'),
+        is_async=is_async,
+        livello=data.get('livello', 'info')
+    )
+    code = 202 if is_async else 201
+    return jsonify(ev.to_dict()), code
+
+@app.route('/api/events/<int:eid>/retry', methods=['POST'])
+@require_auth(roles=['Admin'])
+def retry_event(eid):
+    ev = db.session.get(SystemEvent, eid)
+    if not ev:
+        return jsonify({"error": "Evento non trovato"}), 404
+    ev.stato = 'in_coda'
+    ev.progresso = 0
+    ev.tentativi += 1
+    db.session.commit()
+    from flask import current_app
+    app_obj = current_app._get_current_object()
+    from services.event_dispatcher import executor, _run_async_event
+    if app_obj.config.get("TESTING"):
+        _run_async_event(app_obj, ev.id)
+    else:
+        executor.submit(_run_async_event, app_obj, ev.id)
+    return jsonify(ev.to_dict()), 202
+
+@app.route('/api/pallets/batch-solleciti', methods=['POST'])
+@require_auth(roles=['Admin'])
+def batch_solleciti_pallets():
+    today = date.today()
+    expired_receipts = PalletReceipt.query.filter(
+        PalletReceipt.stato == 'aperto',
+        PalletReceipt.data_limite_restituzione < today
+    ).all()
+
+    desc = f"Avvio solleciti massivi per {len(expired_receipts)} buoni pallet scaduti oltre i termini di legge."
+
+    def _process_solleciti(event):
+        totale = len(expired_receipts)
+        for i, r in enumerate(expired_receipts):
+            time.sleep(0.02)
+            event.progresso = int(((i + 1) / max(1, totale)) * 100)
+            db.session.commit()
+
+    ev = dispatch_event(
+        channel_code="EMAIL",
+        category_code="PALLET",
+        azione="sollecito_massivo_pallet",
+        titolo="Sollecito Massivo Buoni Pallet Scaduti",
+        descrizione=desc,
+        payload_dati={"conteggio_scaduti": len(expired_receipts)},
+        is_async=True,
+        target_func=_process_solleciti
+    )
+    return jsonify(ev.to_dict()), 202
     
 @socketio.on('connect')
 def handle_connect():

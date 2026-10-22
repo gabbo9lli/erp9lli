@@ -5,7 +5,14 @@
         <h2 class="text-h5 text-weight-bold q-my-none">Interscambio Pallet & Buoni Pallet (L. 182/2025)</h2>
         <div class="text-caption text-grey-7">Titoli di credito imballaggi, partitario Dare/Avere e fatturazione mancata resa in Reverse Charge</div>
       </div>
-      <div>
+      <div class="row q-gutter-sm">
+        <q-btn 
+          color="deep-orange" 
+          outline
+          icon="forward_to_inbox" 
+          label="Invia Solleciti Massivi a Scaduti" 
+          @click="sendBatchSolleciti()"
+        />
         <q-btn 
           color="primary" 
           icon="add" 
@@ -117,6 +124,17 @@
                 @click="openReturnDialog(props.row)"
               >
                 <q-tooltip>Registra restituzione pallet</q-tooltip>
+              </q-btn>
+              <q-btn 
+                v-if="props.row.stato === 'aperto'" 
+                color="indigo" 
+                icon="email" 
+                label="Sollecito" 
+                dense 
+                size="sm"
+                @click="sendSingleSollecito(props.row)"
+              >
+                <q-tooltip>Invia sollecito restituzione via email</q-tooltip>
               </q-btn>
               <q-btn 
                 v-if="props.row.stato === 'aperto'" 
@@ -519,6 +537,41 @@ const invoiceUnreturned = async (r) => {
       await fetchLedger()
     } catch (err) {
       alert(err.response?.data?.error || 'Errore durante fatturazione mancata resa')
+    }
+  }
+}
+
+const sendSingleSollecito = async (row) => {
+  if (confirm(`Inviare sollecito restituzione per il buono ${row.numero_completo} a ${row.partner?.ragione_sociale}?`)) {
+    try {
+      const email = row.partner?.pec || row.partner?.email || 'amministrazione@cliente.it'
+      const payload = {
+        channel_code: 'EMAIL',
+        category_code: 'PALLET',
+        azione: 'sollecito_pallet',
+        titolo: `Sollecito Restituzione Pallet Buono ${row.numero_completo}`,
+        descrizione: `Gentile ${row.partner?.ragione_sociale},\nvi ricordiamo che sul Buono Pallet ${row.numero_completo} risultano a debito ${row.saldo_netto} bancali con termine di restituzione ${row.data_limite_restituzione}.\nVi invitiamo a provvedere al rientro.`,
+        destinatario_recapito: email,
+        partner_id: row.partner_id,
+        entita_tipo: 'pallet_receipt',
+        entita_id: row.id,
+        is_async: false
+      }
+      const res = await axios.post('/api/events', payload)
+      alert(`Sollecito registrato con successo (Stato: ${res.data.stato.toUpperCase()})!`)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Errore invio sollecito')
+    }
+  }
+}
+
+const sendBatchSolleciti = async () => {
+  if (confirm("Avviare in background l'invio massivo dei solleciti per tutti i buoni pallet scaduti oltre i 60 giorni?")) {
+    try {
+      const res = await axios.post('/api/pallets/batch-solleciti')
+      alert(`Attività asincrona avviata in background (Task ID: ${res.data.id})! Puoi monitorare l'avanzamento nel Centro Attività.`)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Errore avvio solleciti massivi')
     }
   }
 }
