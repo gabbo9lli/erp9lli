@@ -23,6 +23,9 @@ from .event_channel import EventChannel
 from .event_category import EventCategory
 from .event_type import EventType
 from .system_event import SystemEvent
+from .pos_station import PosStation
+from .pos_sale import PosSale
+from .pos_sale_item import PosSaleItem
 
 __all__ = [
     "db",
@@ -50,4 +53,7 @@ __all__ = [
     "EventCategory",
     "EventType",
     "SystemEvent",
+    "PosStation",
+    "PosSale",
+    "PosSaleItem",
 ]

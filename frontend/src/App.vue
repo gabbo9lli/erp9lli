@@ -122,6 +122,13 @@
               <q-item-section>Bolle (DDT)</q-item-section>
             </q-item>
 
+            <q-item v-if="activeModules.pos !== false" clickable v-ripple to="/bancom" active-class="text-primary bg-blue-1 text-weight-bold">
+              <q-item-section avatar>
+                <q-icon name="point_of_sale" />
+              </q-item-section>
+              <q-item-section>Vendita Banco (POS)</q-item-section>
+            </q-item>
+
             <q-item v-if="activeModules.invoicing" clickable v-ripple to="/invoices" active-class="text-primary bg-blue-1 text-weight-bold">
               <q-item-section avatar>
                 <q-icon name="receipt_long" />

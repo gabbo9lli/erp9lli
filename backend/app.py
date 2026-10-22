@@ -8,7 +8,7 @@ from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
 import io
 import csv
-from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem, EventChannel, EventCategory, EventType, SystemEvent
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem, EventChannel, EventCategory, EventType, SystemEvent, PosStation, PosSale, PosSaleItem
 from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime, date, timedelta
@@ -18,6 +18,7 @@ from functools import wraps
 from flask_socketio import SocketIO, emit
 from services.sdi_service import generate_sdi_xml, validate_sdi_invoice
 from services.event_dispatcher import dispatch_event, seed_default_channels_and_categories, get_redis_connection
+from services.pos_driver_service import PosDriverService
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -106,7 +107,7 @@ def get_me():
 # ==========================================
 # GESTIONE MODULI & FEATURE FLAGS
 # ==========================================
-AVAILABLE_MODULES = ["anagrafiche", "orders", "delivery_notes", "invoicing", "accounting", "warehouse", "pallets", "cmr"]
+AVAILABLE_MODULES = ["anagrafiche", "orders", "delivery_notes", "invoicing", "accounting", "warehouse", "pallets", "cmr", "pos"]
 
 def is_module_enabled(module_name):
     enabled = os.getenv('ENABLED_MODULES', 'all').strip().lower()
@@ -2866,6 +2867,281 @@ def batch_solleciti_pallets():
         target_func=_process_solleciti
     )
     return jsonify(ev.to_dict()), 202
+
+# ==========================================
+# MODULO VENDITA AL BANCO / CASSA RAPIDA (POS)
+# ==========================================
+
+def seed_default_pos_stations():
+    if PosStation.query.count() == 0:
+        st = PosStation(
+            codice="CASSA_01",
+            nome="Cassa Banco Principale",
+            driver_tipo="simulator",
+            matricola_rt="99MEY0001",
+            intestazione="RETEBIO SOCIETA' AGRICOLA\nBOLOGNA (BO)",
+            pie_pagina="ARRIVEDERCI E GRAZIE"
+        )
+        db.session.add(st)
+        db.session.commit()
+
+@app.route('/api/pos/stations', methods=['GET'])
+@require_auth()
+def get_pos_stations():
+    seed_default_pos_stations()
+    stations = PosStation.query.order_by(PosStation.id.asc()).all()
+    return jsonify([s.to_dict() for s in stations]), 200
+
+@app.route('/api/pos/stations', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_pos_station():
+    data = request.get_json() or {}
+    codice = (data.get('codice') or '').strip().upper()
+    nome = (data.get('nome') or '').strip()
+    if not codice or not nome:
+        return jsonify({"error": "codice e nome sono obbligatori"}), 400
+    st = PosStation(
+        codice=codice,
+        nome=nome,
+        driver_tipo=data.get('driver_tipo', 'simulator'),
+        ip_address=data.get('ip_address'),
+        porta=int(data.get('porta', 80)),
+        matricola_rt=data.get('matricola_rt'),
+        intestazione=data.get('intestazione'),
+        pie_pagina=data.get('pie_pagina'),
+        attivo=data.get('attivo', True)
+    )
+    db.session.add(st)
+    db.session.commit()
+    return jsonify(st.to_dict()), 201
+
+@app.route('/api/pos/stations/<int:sid>', methods=['PUT'])
+@require_auth(roles=['Admin'])
+def update_pos_station(sid):
+    st = db.session.get(PosStation, sid)
+    if not st:
+        return jsonify({"error": "Punto cassa non trovato"}), 404
+    data = request.get_json() or {}
+    for field in ['nome', 'driver_tipo', 'ip_address', 'porta', 'matricola_rt', 'intestazione', 'pie_pagina', 'attivo']:
+        if field in data:
+            setattr(st, field, data[field])
+    db.session.commit()
+    return jsonify(st.to_dict()), 200
+
+@app.route('/api/pos/sales', methods=['GET'])
+@require_auth()
+def get_pos_sales():
+    seed_default_pos_stations()
+    sales = PosSale.query.order_by(PosSale.id.desc()).limit(100).all()
+    return jsonify([s.to_dict() for s in sales]), 200
+
+@app.route('/api/pos/sales', methods=['POST'])
+@require_auth()
+def create_pos_sale():
+    seed_default_pos_stations()
+    data = request.get_json() or {}
+    station_id = data.get('pos_station_id')
+    if not station_id:
+        st = PosStation.query.filter_by(attivo=True).first()
+        station_id = st.id if st else None
+
+    station = db.session.get(PosStation, station_id) if station_id else None
+    if not station:
+        return jsonify({"error": "Punto Cassa non valido o non configurato"}), 400
+
+    items_data = data.get('items', [])
+    if not items_data:
+        return jsonify({"error": "Il carrello della vendita è vuoto"}), 400
+
+    totale_lordo = 0.0
+    totale_imponibile = 0.0
+    totale_iva = 0.0
+    sale_items = []
+
+    for it in items_data:
+        p_id = it.get('product_id')
+        prod = db.session.get(Product, p_id)
+        if not prod:
+            return jsonify({"error": f"Prodotto ID {p_id} non trovato"}), 404
+
+        qty = float(it.get('quantita', 1.0))
+        price = float(it.get('prezzo_unitario', prod.prezzo_vendita or 0.0))
+        subtot = round(qty * price, 2)
+        aliquota = float(prod.aliquota_iva or 22.0)
+        imp = round(subtot / (1.0 + aliquota / 100.0), 2)
+        iva = round(subtot - imp, 2)
+
+        lotto = it.get('lotto')
+        scadenza = None
+        if it.get('data_scadenza'):
+            try:
+                scadenza = datetime.strptime(it['data_scadenza'][:10], '%Y-%m-%d').date()
+            except Exception:
+                pass
+
+        if prod.in_scadenza and not lotto:
+            carichi = db.session.query(
+                PurchaseDeliveryNoteItem.lotto,
+                PurchaseDeliveryNoteItem.data_scadenza,
+                func.sum(PurchaseDeliveryNoteItem.quantita).label('carico')
+            ).filter_by(product_id=prod.id).group_by(
+                PurchaseDeliveryNoteItem.lotto,
+                PurchaseDeliveryNoteItem.data_scadenza
+            ).order_by(PurchaseDeliveryNoteItem.data_scadenza.asc()).all()
+
+            if carichi:
+                lotto = carichi[0].lotto
+                scadenza = carichi[0].data_scadenza
+
+        totale_lordo += subtot
+        totale_imponibile += imp
+        totale_iva += iva
+
+        sale_item = PosSaleItem(
+            product_id=prod.id,
+            quantita=qty,
+            prezzo_unitario=price,
+            aliquota_iva=aliquota,
+            subtotale=subtot,
+            lotto=lotto,
+            data_scadenza=scadenza
+        )
+        sale_items.append(sale_item)
+
+    totale_lordo = round(totale_lordo, 2)
+    totale_iva = round(totale_iva, 2)
+    totale_imponibile = round(totale_lordo - totale_iva, 2)
+
+    metodo_pagamento = (data.get('metodo_pagamento') or 'contanti').lower()
+    importo_pagato = float(data.get('importo_pagato', totale_lordo))
+
+    if metodo_pagamento == 'contanti' and importo_pagato < (totale_lordo - 0.001):
+        return jsonify({"error": f"Importo pagato ({importo_pagato:.2f} €) insufficiente per il totale di {totale_lordo:.2f} €"}), 400
+
+    importo_resto = max(0.0, round(importo_pagato - totale_lordo, 2)) if metodo_pagamento == 'contanti' else 0.0
+
+    year = datetime.utcnow().year
+    prefix = f"SC-{year}-"
+    last_sale = PosSale.query.filter(PosSale.numero_scontrino.like(f"{prefix}%")).order_by(PosSale.id.desc()).first()
+    if last_sale and last_sale.numero_scontrino.startswith(prefix):
+        try:
+            seq = int(last_sale.numero_scontrino.split('-')[-1]) + 1
+        except Exception:
+            seq = 1
+    else:
+        seq = 1
+    numero_scontrino = f"{prefix}{seq:04d}"
+
+    email = getattr(request, 'user_email', 'cassa@retebio.it')
+    u = User.query.filter_by(email=email).first()
+
+    sale = PosSale(
+        pos_station_id=station.id,
+        numero_scontrino=numero_scontrino,
+        data_ora=datetime.utcnow(),
+        totale_lordo=totale_lordo,
+        totale_imponibile=totale_imponibile,
+        totale_iva=totale_iva,
+        metodo_pagamento=metodo_pagamento,
+        importo_pagato=importo_pagato,
+        importo_resto=importo_resto,
+        stato='emesso',
+        utente_id=u.id if u else None,
+        utente_email=email,
+        cliente_id=data.get('cliente_id')
+    )
+    for si in sale_items:
+        sale.items.append(si)
+
+    db.session.add(sale)
+    db.session.flush()
+
+    ticket_res = PosDriverService.print_ticket(sale, station)
+    sale.stato_fiscale_rt = ticket_res.get('stato_fiscale', 'simulato')
+    sale.dettaglio_rt_risposta = ticket_res.get('messaggio')
+
+    # Registrazione automatica Partita Doppia
+    acc_cassa = Account.query.filter(Account.codice.in_(["1001", "1.01.01.01"])).first()
+    acc_pos = Account.query.filter(Account.codice.in_(["1002", "1.01.02.01"])).first()
+    acc_ricavo = Account.query.filter(Account.codice.in_(["4101", "4.01.01.01"])).first()
+    acc_iva = Account.query.filter(Account.codice.in_(["2201", "2.02.01.01"])).first()
+
+    acc_dare = acc_pos if metodo_pagamento in ['pos_carta', 'pos', 'carta'] and acc_pos else acc_cassa
+
+    if acc_dare and acc_ricavo and acc_iva:
+        anno_cont = date.today().year
+        num_cont = get_next_journal_entry_number(anno_cont)
+        num_comp = f"PN-{anno_cont}-{num_cont:04d}"
+        je = JournalEntry(
+            numero=num_cont,
+            anno=anno_cont,
+            numero_completo=num_comp,
+            data_registrazione=date.today(),
+            data_competenza=date.today(),
+            causale=f"Corrispettivo di Cassa {numero_scontrino}",
+            totale_dare=totale_lordo,
+            totale_avere=totale_lordo,
+            stato="confermata"
+        )
+        db.session.add(je)
+        db.session.flush()
+
+        db.session.add(JournalItem(
+            journal_entry_id=je.id,
+            account_id=acc_dare.id,
+            descrizione_riga=f"Incasso scontrino {numero_scontrino}",
+            dare=totale_lordo,
+            avere=0.0
+        ))
+        db.session.add(JournalItem(
+            journal_entry_id=je.id,
+            account_id=acc_ricavo.id,
+            descrizione_riga=f"Corrispettivo imponibile {numero_scontrino}",
+            dare=0.0,
+            avere=totale_imponibile
+        ))
+        db.session.add(JournalItem(
+            journal_entry_id=je.id,
+            account_id=acc_iva.id,
+            descrizione_riga=f"IVA vendite al banco {numero_scontrino}",
+            dare=0.0,
+            avere=totale_iva
+        ))
+        sale.journal_entry_id = je.id
+
+    db.session.commit()
+
+    try:
+        dispatch_event(
+            azione="vendita_banco",
+            titolo=f"Scontrino Banco {numero_scontrino}",
+            descrizione=f"Emesso scontrino {numero_scontrino} - Totale {totale_lordo:.2f} € ({metodo_pagamento})",
+            channel_code="AUDIT",
+            category_code="VENDITE",
+            entita_tipo="pos_sale",
+            entita_id=sale.id,
+            utente_email=email
+        )
+    except Exception:
+        pass
+
+    resp_data = sale.to_dict()
+    resp_data["ticket_ascii"] = ticket_res.get("ticket_ascii")
+    return jsonify(resp_data), 201
+
+@app.route('/api/pos/sales/<int:sid>/print', methods=['POST'])
+@require_auth()
+def print_pos_sale(sid):
+    sale = db.session.get(PosSale, sid)
+    if not sale:
+        return jsonify({"error": "Scontrino non trovato"}), 404
+    station = sale.station or PosStation.query.first()
+    ticket_res = PosDriverService.print_ticket(sale, station)
+    return jsonify({
+        "success": ticket_res.get("success", True),
+        "stato_fiscale": ticket_res.get("stato_fiscale"),
+        "ticket_ascii": ticket_res.get("ticket_ascii")
+    }), 200
     
 @socketio.on('connect')
 def handle_connect():

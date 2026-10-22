@@ -15,6 +15,7 @@ import WarehouseStock from './components/WarehouseStock.vue'
 import Pallets from './components/Pallets.vue'
 import CmrManagement from './components/CmrManagement.vue'
 import ActivityCenter from './components/ActivityCenter.vue'
+import BancoM from './components/BancoM.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -26,6 +27,7 @@ const routes = [
   { path: '/products', component: ProductCatalog, meta: { requiresAuth: true } },
   { path: '/orders', component: Orders, meta: { requiresAuth: true } },
   { path: '/delivery-notes', component: DeliveryNotes, meta: { requiresAuth: true } },
+  { path: '/bancom', component: BancoM, meta: { requiresAuth: true } },
   { path: '/purchases', component: Purchases, meta: { requiresAuth: true } },
   { path: '/warehouse', component: WarehouseStock, meta: { requiresAuth: true } },
   { path: '/pallets', component: Pallets, meta: { requiresAuth: true } },
