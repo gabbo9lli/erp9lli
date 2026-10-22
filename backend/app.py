@@ -816,6 +816,7 @@ def auto_post_invoice_to_accounting(inv):
     seed_default_accounting_causals()
     causal = AccountingCausal.query.filter_by(codice="VEND_FATT", attivo=True).first()
     if not causal or not (causal.conto_dare_id and causal.conto_avere_id and causal.conto_iva_id):
+        app.logger.warning(f"Contabilizzazione automatica fattura {inv.numero_completo} saltata: causale VEND_FATT o conti Dare/Avere/IVA non configurati.")
         return None
 
     anno = inv.anno or (inv.data_documento.year if inv.data_documento else date.today().year)

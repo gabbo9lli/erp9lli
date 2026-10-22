@@ -80,6 +80,8 @@ DEFAULT_ACCOUNTING_CAUSALS = [
 ]
 
 def seed_chart_of_accounts():
+    if Account.query.count() >= len(CHART_OF_ACCOUNTS):
+        return 0
     added = 0
     for acc_data in CHART_OF_ACCOUNTS:
         existing = Account.query.filter_by(codice=acc_data["codice"]).first()
@@ -93,6 +95,9 @@ def seed_chart_of_accounts():
 
 def seed_default_accounting_causals():
     seed_chart_of_accounts()
+    if AccountingCausal.query.count() >= len(DEFAULT_ACCOUNTING_CAUSALS):
+        return 0
+
     added = 0
     for c_data in DEFAULT_ACCOUNTING_CAUSALS:
         existing = AccountingCausal.query.filter_by(codice=c_data["codice"]).first()
