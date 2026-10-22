@@ -2872,6 +2872,21 @@ def batch_solleciti_pallets():
 # MODULO VENDITA AL BANCO / CASSA RAPIDA (POS)
 # ==========================================
 
+def get_next_pos_sale_number(year):
+    prefix = f"SC-{year}-"
+    try:
+        last_sale = PosSale.query.filter(PosSale.numero_scontrino.like(f"{prefix}%")).with_for_update().order_by(PosSale.id.desc()).first()
+    except Exception:
+        last_sale = PosSale.query.filter(PosSale.numero_scontrino.like(f"{prefix}%")).order_by(PosSale.id.desc()).first()
+    if last_sale and last_sale.numero_scontrino.startswith(prefix):
+        try:
+            seq = int(last_sale.numero_scontrino.split('-')[-1]) + 1
+        except Exception:
+            seq = 1
+    else:
+        seq = 1
+    return f"{prefix}{seq:04d}"
+
 def seed_default_pos_stations():
     if PosStation.query.count() == 0:
         st = PosStation(
@@ -3021,16 +3036,7 @@ def create_pos_sale():
     importo_resto = max(0.0, round(importo_pagato - totale_lordo, 2)) if metodo_pagamento == 'contanti' else 0.0
 
     year = datetime.utcnow().year
-    prefix = f"SC-{year}-"
-    last_sale = PosSale.query.filter(PosSale.numero_scontrino.like(f"{prefix}%")).order_by(PosSale.id.desc()).first()
-    if last_sale and last_sale.numero_scontrino.startswith(prefix):
-        try:
-            seq = int(last_sale.numero_scontrino.split('-')[-1]) + 1
-        except Exception:
-            seq = 1
-    else:
-        seq = 1
-    numero_scontrino = f"{prefix}{seq:04d}"
+    numero_scontrino = get_next_pos_sale_number(year)
 
     email = getattr(request, 'user_email', 'cassa@retebio.it')
     u = User.query.filter_by(email=email).first()
@@ -3108,6 +3114,8 @@ def create_pos_sale():
             avere=totale_iva
         ))
         sale.journal_entry_id = je.id
+    else:
+        app.logger.warning(f"Contabilizzazione automatica scontrino {numero_scontrino} saltata: conti contabili (1001/1002, 4101, 2201) non censiti a piano dei conti.")
 
     db.session.commit()
 

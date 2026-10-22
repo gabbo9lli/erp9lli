@@ -242,7 +242,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 
 const activeTab = ref('pos')
@@ -427,10 +427,24 @@ const saveStation = async () => {
   }
 }
 
+const handleKeyDown = (e) => {
+  if (e.key === 'F12') {
+    e.preventDefault()
+    if (cart.value.length > 0 && (paymentMethod.value !== 'contanti' || paidAmount.value >= cartTotal.value)) {
+      checkout()
+    }
+  }
+}
+
 onMounted(() => {
   fetchProducts()
   fetchStations()
   fetchSales()
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown)
 })
 </script>
 
