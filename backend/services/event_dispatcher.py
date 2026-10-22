@@ -67,6 +67,22 @@ def seed_default_event_types():
                 ))
     db.session.commit()
 
+    try:
+        from models import AccountingCausal
+        causali_map = {
+            "EMISSIONE_FATTURA": "VEND_FATT",
+            "INCASSO_RATA": "INCASSO_RATA",
+            "CARICO_MERCI": "ACQ_MERCI"
+        }
+        for ev_code, caus_code in causali_map.items():
+            ev = EventType.query.filter_by(codice=ev_code).first()
+            caus = AccountingCausal.query.filter_by(codice=caus_code).first()
+            if ev and caus and not ev.accounting_causal_id:
+                ev.accounting_causal_id = caus.id
+        db.session.commit()
+    except Exception:
+        pass
+
 def get_redis_connection():
     try:
         from flask import current_app

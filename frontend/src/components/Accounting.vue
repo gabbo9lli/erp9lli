@@ -22,6 +22,7 @@
       <q-tab name="mastro" label="Schede Mastro" icon="account_balance_wallet" />
       <q-tab name="bilancio" label="Bilancio di Verifica" icon="balance" />
       <q-tab name="conti" label="Piano dei Conti" icon="list_alt" />
+      <q-tab name="causals" label="Causali Contabili & Automatismi" icon="rule" />
     </q-tabs>
 
     <q-separator class="q-mb-md" />
@@ -264,6 +265,48 @@
           </template>
         </q-table>
       </q-tab-panel>
+
+      <!-- TAB 6: CAUSALI CONTABILI & AUTOMATISMI -->
+      <q-tab-panel name="causals" class="q-pa-none">
+        <div class="row justify-between items-center q-mb-md">
+          <div>
+            <div class="text-subtitle1 text-weight-bold">Causali Contabili & Automatismi</div>
+            <div class="text-caption text-grey-7">Configurazione causali operative e mapping conti Dare, Avere e IVA per registrazioni automatiche e manuali</div>
+          </div>
+        </div>
+
+        <q-table
+          :rows="causals"
+          :columns="causalColumns"
+          row-key="id"
+          flat
+          bordered
+        >
+          <template v-slot:body-cell-dare="props">
+            <q-td :props="props">
+              <q-badge color="blue-2" text-color="primary" class="q-pa-xs">
+                {{ props.row.conto_dare_codice ? `${props.row.conto_dare_codice} - ${props.row.conto_dare_nome}` : '-' }}
+              </q-badge>
+            </q-td>
+          </template>
+
+          <template v-slot:body-cell-avere="props">
+            <q-td :props="props">
+              <q-badge color="teal-2" text-color="teal-10" class="q-pa-xs">
+                {{ props.row.conto_avere_codice ? `${props.row.conto_avere_codice} - ${props.row.conto_avere_nome}` : '-' }}
+              </q-badge>
+            </q-td>
+          </template>
+
+          <template v-slot:body-cell-iva="props">
+            <q-td :props="props">
+              <q-badge color="purple-2" text-color="purple-10" class="q-pa-xs">
+                {{ props.row.conto_iva_codice ? `${props.row.conto_iva_codice} - ${props.row.conto_iva_nome}` : '-' }}
+              </q-badge>
+            </q-td>
+          </template>
+        </q-table>
+      </q-tab-panel>
     </q-tab-panels>
 
     <!-- DIALOG NUOVA REGISTRAZIONE PRIMA NOTA A PAREGGIO -->
@@ -277,6 +320,20 @@
 
         <q-card-section class="q-gutter-md">
           <div class="row q-col-gutter-sm">
+            <div class="col-12 q-mb-xs">
+              <q-select
+                v-model="selectedCausalId"
+                :options="causalOptions"
+                emit-value
+                map-options
+                outlined
+                dense
+                clearable
+                label="Seleziona Causale Operativa Predefinita (Autocompila Conti Dare e Avere)"
+                @update:model-value="onCausalSelected"
+                class="bg-blue-1 rounded-borders"
+              />
+            </div>
             <div class="col-12 col-md-3">
               <q-input v-model="formEntry.data_registrazione" type="date" label="Data Registrazione *" outlined dense />
             </div>
@@ -408,6 +465,8 @@ import axios from 'axios'
 const activeTab = ref('entries')
 const entries = ref([])
 const accounts = ref([])
+const causals = ref([])
+const selectedCausalId = ref(null)
 const partners = ref([])
 const giornaleReport = ref({})
 const mastroReport = ref({})
@@ -420,6 +479,36 @@ const newEntryDialogOpen = ref(false)
 const detailDialogOpen = ref(false)
 const selectedEntry = ref(null)
 const searchTerm = ref('')
+
+const causalColumns = [
+  { name: 'codice', label: 'Codice Causale', field: 'codice', align: 'left', sortable: true },
+  { name: 'descrizione', label: 'Descrizione Operazione', field: 'descrizione', align: 'left' },
+  { name: 'tipo_registro', label: 'Registro IVA', field: 'tipo_registro', align: 'center' },
+  { name: 'dare', label: 'Conto Dare (Default)', align: 'left' },
+  { name: 'avere', label: 'Conto Avere (Default)', align: 'left' },
+  { name: 'iva', label: 'Conto IVA (Default)', align: 'left' }
+]
+
+const causalOptions = computed(() => {
+  return causals.value.map(c => ({
+    label: `${c.codice} - ${c.descrizione}`,
+    value: c.id
+  }))
+})
+
+const onCausalSelected = (cId) => {
+  if (!cId) return
+  const c = causals.value.find(x => x.id === cId)
+  if (c) {
+    formEntry.value.causale = c.descrizione
+    if (c.conto_dare_id && formEntry.value.items[0]) {
+      formEntry.value.items[0].account_id = c.conto_dare_id
+    }
+    if (c.conto_avere_id && formEntry.value.items[1]) {
+      formEntry.value.items[1].account_id = c.conto_avere_id
+    }
+  }
+}
 
 const formEntry = ref({
   data_registrazione: new Date().toISOString().split('T')[0],
@@ -552,11 +641,21 @@ const fetchBilancio = async () => {
   }
 }
 
+const fetchCausals = async () => {
+  try {
+    const res = await axios.get('/api/accounting/causals')
+    causals.value = res.data
+  } catch (err) {
+    console.error('Error fetching causals:', err)
+  }
+}
+
 const exportCsv = (url, filename) => {
   window.open(url, '_blank')
 }
 
 const openNewEntryDialog = () => {
+  selectedCausalId.value = null
   formEntry.value = {
     data_registrazione: new Date().toISOString().split('T')[0],
     data_competenza: new Date().toISOString().split('T')[0],
@@ -602,6 +701,7 @@ const viewEntry = (entry) => {
 onMounted(() => {
   fetchEntries()
   fetchAccounts()
+  fetchCausals()
   fetchPartners()
   fetchGiornale()
   fetchBilancio()

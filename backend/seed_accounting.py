@@ -1,5 +1,4 @@
-from app import app
-from models import db, Account
+from models import db, Account, AccountingCausal, EventType
 
 CHART_OF_ACCOUNTS = [
     # ATTIVO (1xxx)
@@ -23,6 +22,63 @@ CHART_OF_ACCOUNTS = [
     {"codice": "4201", "nome": "Ricavi Prestazioni e Cauzioni", "tipo": "ricavi"}
 ]
 
+DEFAULT_ACCOUNTING_CAUSALS = [
+    {
+        "codice": "VEND_FATT",
+        "descrizione": "Fattura di Vendita a Cliente",
+        "tipo_registro": "vendite",
+        "conto_dare": "1101",
+        "conto_avere": "4101",
+        "conto_iva": "2201",
+        "template_descrizione": "Fattura n. {numero} del {data} a {cliente}"
+    },
+    {
+        "codice": "VEND_NC",
+        "descrizione": "Nota di Credito a Cliente",
+        "tipo_registro": "vendite",
+        "conto_dare": "4101",
+        "conto_avere": "1101",
+        "conto_iva": "2201",
+        "template_descrizione": "Nota di Credito n. {numero} su FT {origine}"
+    },
+    {
+        "codice": "INCASSO_RATA",
+        "descrizione": "Incasso Rata Fattura Cliente",
+        "tipo_registro": "generale",
+        "conto_dare": "1002",
+        "conto_avere": "1101",
+        "conto_iva": None,
+        "template_descrizione": "Incasso rata {rata} fattura {numero}"
+    },
+    {
+        "codice": "CORRISPETTIVO",
+        "descrizione": "Corrispettivo di Cassa al Minuto",
+        "tipo_registro": "corrispettivi",
+        "conto_dare": "1001",
+        "conto_avere": "4101",
+        "conto_iva": "2201",
+        "template_descrizione": "Corrispettivo di Cassa {numero}"
+    },
+    {
+        "codice": "ACQ_MERCI",
+        "descrizione": "Carico Merci / Acquisto Fornitore",
+        "tipo_registro": "acquisti",
+        "conto_dare": "5101",
+        "conto_avere": "2001",
+        "conto_iva": "2202",
+        "template_descrizione": "Carico merci fornitore {fornitore} doc {numero}"
+    },
+    {
+        "codice": "PAGAM_FORN",
+        "descrizione": "Pagamento Fattura Fornitore",
+        "tipo_registro": "generale",
+        "conto_dare": "2001",
+        "conto_avere": "1002",
+        "conto_iva": None,
+        "template_descrizione": "Pagamento fornitore {fornitore}"
+    }
+]
+
 def seed_chart_of_accounts():
     added = 0
     for acc_data in CHART_OF_ACCOUNTS:
@@ -35,8 +91,49 @@ def seed_chart_of_accounts():
         db.session.commit()
     return added
 
+def seed_default_accounting_causals():
+    seed_chart_of_accounts()
+    added = 0
+    for c_data in DEFAULT_ACCOUNTING_CAUSALS:
+        existing = AccountingCausal.query.filter_by(codice=c_data["codice"]).first()
+        acc_dare = Account.query.filter_by(codice=c_data["conto_dare"]).first() if c_data.get("conto_dare") else None
+        acc_avere = Account.query.filter_by(codice=c_data["conto_avere"]).first() if c_data.get("conto_avere") else None
+        acc_iva = Account.query.filter_by(codice=c_data["conto_iva"]).first() if c_data.get("conto_iva") else None
+
+        if not existing:
+            causal = AccountingCausal(
+                codice=c_data["codice"],
+                descrizione=c_data["descrizione"],
+                tipo_registro=c_data["tipo_registro"],
+                conto_dare_id=acc_dare.id if acc_dare else None,
+                conto_avere_id=acc_avere.id if acc_avere else None,
+                conto_iva_id=acc_iva.id if acc_iva else None,
+                template_descrizione=c_data.get("template_descrizione")
+            )
+            db.session.add(causal)
+            added += 1
+
+    if added > 0:
+        db.session.commit()
+
+    causali_map = {
+        "EMISSIONE_FATTURA": "VEND_FATT",
+        "INCASSO_RATA": "INCASSO_RATA",
+        "CARICO_MERCI": "ACQ_MERCI"
+    }
+    for ev_code, caus_code in causali_map.items():
+        ev = EventType.query.filter_by(codice=ev_code).first()
+        caus = AccountingCausal.query.filter_by(codice=caus_code).first()
+        if ev and caus and not ev.accounting_causal_id:
+            ev.accounting_causal_id = caus.id
+    db.session.commit()
+    return added
+
 if __name__ == '__main__':
+    from app import app
     with app.app_context():
         print("Inizializzazione Piano dei Conti standard in corso...")
         count = seed_chart_of_accounts()
         print(f"Piano dei Conti completato: inseriti {count} nuovi conti.")
+        c_count = seed_default_accounting_causals()
+        print(f"Causali Contabili completate: inserite {c_count} nuove causali.")

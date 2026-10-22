@@ -8,7 +8,7 @@ from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
 import io
 import csv
-from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem, EventChannel, EventCategory, EventType, SystemEvent, PosStation, PosSale, PosSaleItem
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem, EventChannel, EventCategory, EventType, SystemEvent, PosStation, PosSale, PosSaleItem, AccountingCausal
 from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime, date, timedelta
@@ -19,6 +19,7 @@ from flask_socketio import SocketIO, emit
 from services.sdi_service import generate_sdi_xml, validate_sdi_invoice
 from services.event_dispatcher import dispatch_event, seed_default_channels_and_categories, get_redis_connection
 from services.pos_driver_service import PosDriverService
+from seed_accounting import seed_default_accounting_causals
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -811,6 +812,61 @@ def calculate_installments(totale_fattura, data_documento, condizioni):
 
     return rate
 
+def auto_post_invoice_to_accounting(inv):
+    seed_default_accounting_causals()
+    causal = AccountingCausal.query.filter_by(codice="VEND_FATT", attivo=True).first()
+    if not causal or not (causal.conto_dare_id and causal.conto_avere_id and causal.conto_iva_id):
+        return None
+
+    anno = inv.anno or (inv.data_documento.year if inv.data_documento else date.today().year)
+    num = get_next_journal_entry_number(anno)
+    num_comp = f"PN-{anno}-{num:04d}"
+    tot_lordo = float(inv.totale_fattura)
+    tot_iva = float(inv.totale_imposta or 0.0)
+    tot_imp = round(tot_lordo - tot_iva, 2)
+
+    cli_nome = inv.cliente.ragione_sociale if inv.cliente else "Cliente"
+    desc_entry = f"Fattura {inv.numero_completo} a {cli_nome}"
+
+    je = JournalEntry(
+        numero=num,
+        anno=anno,
+        numero_completo=num_comp,
+        data_registrazione=inv.data_documento or date.today(),
+        data_competenza=inv.data_documento or date.today(),
+        causale=desc_entry,
+        causale_id=causal.id,
+        totale_dare=tot_lordo,
+        totale_avere=tot_lordo,
+        stato="confermata"
+    )
+    db.session.add(je)
+    db.session.flush()
+
+    db.session.add(JournalItem(
+        journal_entry_id=je.id,
+        account_id=causal.conto_dare_id,
+        partner_id=inv.cliente_id,
+        descrizione_riga=f"Credito fattura {inv.numero_completo}",
+        dare=tot_lordo,
+        avere=0.0
+    ))
+    db.session.add(JournalItem(
+        journal_entry_id=je.id,
+        account_id=causal.conto_avere_id,
+        descrizione_riga=f"Ricavo vendita {inv.numero_completo}",
+        dare=0.0,
+        avere=tot_imp
+    ))
+    db.session.add(JournalItem(
+        journal_entry_id=je.id,
+        account_id=causal.conto_iva_id,
+        descrizione_riga=f"IVA a debito {inv.numero_completo}",
+        dare=0.0,
+        avere=tot_iva
+    ))
+    return je
+
 @app.route('/api/delivery-notes/unbilled', methods=['GET'])
 @require_auth()
 def get_unbilled_delivery_notes():
@@ -924,6 +980,21 @@ def create_invoice_from_ddt():
     for ddt in ddts:
         ddt.stato = 'fatturato'
 
+    db.session.flush()
+    je = auto_post_invoice_to_accounting(invoice)
+    try:
+        dispatch_event(
+            event_type_code="EMISSIONE_FATTURA",
+            titolo=f"Fattura {invoice.numero_completo}",
+            descrizione=f"Emessa fattura differita {invoice.numero_completo} - Totale {invoice.totale_fattura:.2f} €",
+            entita_tipo="invoice",
+            entita_id=invoice.id,
+            partner_id=invoice.cliente_id,
+            payload_dati={"totale": float(invoice.totale_fattura), "journal_entry_id": je.id if je else None}
+        )
+    except Exception:
+        pass
+
     try:
         db.session.commit()
         return jsonify(invoice.to_dict()), 201
@@ -1029,6 +1100,21 @@ def create_invoice_direct():
         installments=installments
     )
     db.session.add(invoice)
+    db.session.flush()
+    je = auto_post_invoice_to_accounting(invoice)
+    try:
+        dispatch_event(
+            event_type_code="EMISSIONE_FATTURA",
+            titolo=f"Fattura {invoice.numero_completo}",
+            descrizione=f"Emessa fattura {invoice.numero_completo} ({invoice.tipo_documento}) - Totale {invoice.totale_fattura:.2f} €",
+            entita_tipo="invoice",
+            entita_id=invoice.id,
+            partner_id=invoice.cliente_id,
+            payload_dati={"totale": float(invoice.totale_fattura), "journal_entry_id": je.id if je else None}
+        )
+    except Exception:
+        pass
+
     try:
         db.session.commit()
         return jsonify(invoice.to_dict()), 201
@@ -1206,6 +1292,71 @@ def create_credit_note_from_invoice(iid):
         if all(inst.stato == 'incassata' or inst.importo <= 0.0 for inst in inv.installments):
             inv.stato = 'saldata'
 
+    db.session.flush()
+    seed_default_accounting_causals()
+    causal_nc = AccountingCausal.query.filter_by(codice="VEND_NC", attivo=True).first()
+    je_nc = None
+    if causal_nc and causal_nc.conto_dare_id and causal_nc.conto_avere_id and causal_nc.conto_iva_id:
+        anno_c = date.today().year
+        num_c = get_next_journal_entry_number(anno_c)
+        num_comp_c = f"PN-{anno_c}-{num_c:04d}"
+        tot_lordo_c = float(nc.totale_fattura)
+        tot_iva_c = float(nc.totale_imposta or 0.0)
+        tot_imp_c = round(tot_lordo_c - tot_iva_c, 2)
+        cli_nome = inv.cliente.ragione_sociale if inv.cliente else "Cliente"
+
+        je_nc = JournalEntry(
+            numero=num_c,
+            anno=anno_c,
+            numero_completo=num_comp_c,
+            data_registrazione=date.today(),
+            data_competenza=date.today(),
+            causale=f"Nota di Credito {nc.numero_completo} su {inv.numero_completo} a {cli_nome}",
+            causale_id=causal_nc.id,
+            totale_dare=tot_lordo_c,
+            totale_avere=tot_lordo_c,
+            stato="confermata"
+        )
+        db.session.add(je_nc)
+        db.session.flush()
+
+        db.session.add(JournalItem(
+            journal_entry_id=je_nc.id,
+            account_id=causal_nc.conto_dare_id,
+            descrizione_riga=f"Storno ricavi {nc.numero_completo}",
+            dare=tot_imp_c,
+            avere=0.0
+        ))
+        db.session.add(JournalItem(
+            journal_entry_id=je_nc.id,
+            account_id=causal_nc.conto_iva_id,
+            descrizione_riga=f"Storno IVA a debito {nc.numero_completo}",
+            dare=tot_iva_c,
+            avere=0.0
+        ))
+        db.session.add(JournalItem(
+            journal_entry_id=je_nc.id,
+            account_id=causal_nc.conto_avere_id,
+            partner_id=nc.cliente_id,
+            descrizione_riga=f"Storno credito cliente {nc.numero_completo}",
+            dare=0.0,
+            avere=tot_lordo_c
+        ))
+
+    try:
+        dispatch_event(
+            event_type_code="EMISSIONE_FATTURA",
+            azione="emissione_nota_credito",
+            titolo=f"Nota di Credito {nc.numero_completo}",
+            descrizione=f"Emessa nota di credito {nc.numero_completo} a storno di {inv.numero_completo} ({nc.totale_fattura:.2f} €)",
+            entita_tipo="invoice",
+            entita_id=nc.id,
+            partner_id=nc.cliente_id,
+            payload_dati={"totale": float(nc.totale_fattura), "journal_entry_id": je_nc.id if je_nc else None}
+        )
+    except Exception:
+        pass
+
     try:
         db.session.commit()
         return jsonify(nc.to_dict()), 201
@@ -1270,6 +1421,62 @@ def pay_installment(inst_id):
     if all(i.stato == 'incassata' for i in invoice.installments):
         invoice.stato = 'saldata'
 
+    db.session.flush()
+    seed_default_accounting_causals()
+    causal = AccountingCausal.query.filter_by(codice="INCASSO_RATA", attivo=True).first()
+    je = None
+    if causal and causal.conto_dare_id and causal.conto_avere_id:
+        anno = date.today().year
+        num = get_next_journal_entry_number(anno)
+        num_comp = f"PN-{anno}-{num:04d}"
+        imp_rata = float(inst.importo)
+        cli_nome = invoice.cliente.ragione_sociale if invoice.cliente else "Cliente"
+        desc_entry = f"Incasso rata {inst.numero_rata} fattura {invoice.numero_completo} - {cli_nome}"
+
+        je = JournalEntry(
+            numero=num,
+            anno=anno,
+            numero_completo=num_comp,
+            data_registrazione=date.today(),
+            data_competenza=date.today(),
+            causale=desc_entry,
+            causale_id=causal.id,
+            totale_dare=imp_rata,
+            totale_avere=imp_rata,
+            stato="confermata"
+        )
+        db.session.add(je)
+        db.session.flush()
+
+        db.session.add(JournalItem(
+            journal_entry_id=je.id,
+            account_id=causal.conto_dare_id,
+            descrizione_riga=f"Incasso banca rata {inst.numero_rata} FT {invoice.numero_completo}",
+            dare=imp_rata,
+            avere=0.0
+        ))
+        db.session.add(JournalItem(
+            journal_entry_id=je.id,
+            account_id=causal.conto_avere_id,
+            partner_id=invoice.cliente_id,
+            descrizione_riga=f"Chiusura credito rata {inst.numero_rata} FT {invoice.numero_completo}",
+            dare=0.0,
+            avere=imp_rata
+        ))
+
+    try:
+        dispatch_event(
+            event_type_code="INCASSO_RATA",
+            titolo=f"Incasso Rata {inst.numero_rata} - {invoice.numero_completo}",
+            descrizione=f"Incassata rata n. {inst.numero_rata} della fattura {invoice.numero_completo} ({inst.importo:.2f} €)",
+            entita_tipo="installment",
+            entita_id=inst.id,
+            partner_id=invoice.cliente_id,
+            payload_dati={"importo": float(inst.importo), "journal_entry_id": je.id if je else None}
+        )
+    except Exception:
+        pass
+
     try:
         db.session.commit()
         return jsonify(inst.to_dict()), 200
@@ -1306,6 +1513,50 @@ def create_account():
     db.session.add(acc)
     db.session.commit()
     return jsonify(acc.to_dict()), 201
+
+@app.route('/api/accounting/causals', methods=['GET'])
+@require_auth()
+def get_accounting_causals():
+    seed_default_accounting_causals()
+    causals = AccountingCausal.query.order_by(AccountingCausal.codice.asc()).all()
+    return jsonify([c.to_dict() for c in causals]), 200
+
+@app.route('/api/accounting/causals', methods=['POST'])
+@require_auth(roles=['Admin'])
+def create_accounting_causal():
+    data = request.get_json() or {}
+    codice = (data.get('codice') or '').strip().upper()
+    descrizione = (data.get('descrizione') or '').strip()
+    if not codice or not descrizione:
+        return jsonify({"error": "codice e descrizione sono obbligatori"}), 400
+    if AccountingCausal.query.filter_by(codice=codice).first():
+        return jsonify({"error": f"Causale {codice} già esistente"}), 400
+    causal = AccountingCausal(
+        codice=codice,
+        descrizione=descrizione,
+        tipo_registro=data.get('tipo_registro', 'generale'),
+        conto_dare_id=data.get('conto_dare_id'),
+        conto_avere_id=data.get('conto_avere_id'),
+        conto_iva_id=data.get('conto_iva_id'),
+        template_descrizione=data.get('template_descrizione'),
+        attivo=data.get('attivo', True)
+    )
+    db.session.add(causal)
+    db.session.commit()
+    return jsonify(causal.to_dict()), 201
+
+@app.route('/api/accounting/causals/<int:cid>', methods=['PUT'])
+@require_auth(roles=['Admin'])
+def update_accounting_causal(cid):
+    causal = db.session.get(AccountingCausal, cid)
+    if not causal:
+        return jsonify({"error": "Causale non trovata"}), 404
+    data = request.get_json() or {}
+    for field in ['descrizione', 'tipo_registro', 'conto_dare_id', 'conto_avere_id', 'conto_iva_id', 'template_descrizione', 'attivo']:
+        if field in data:
+            setattr(causal, field, data[field])
+    db.session.commit()
+    return jsonify(causal.to_dict()), 200
 
 @app.route('/api/accounting/entries', methods=['GET'])
 @require_auth()
@@ -3067,10 +3318,13 @@ def create_pos_sale():
     sale.dettaglio_rt_risposta = ticket_res.get('messaggio')
 
     # Registrazione automatica Partita Doppia
-    acc_cassa = Account.query.filter(Account.codice.in_(["1001", "1.01.01.01"])).first()
+    seed_default_accounting_causals()
+    causal_pos = AccountingCausal.query.filter_by(codice="CORRISPETTIVO", attivo=True).first()
+
+    acc_cassa = causal_pos.conto_dare if (causal_pos and causal_pos.conto_dare) else Account.query.filter(Account.codice.in_(["1001", "1.01.01.01"])).first()
     acc_pos = Account.query.filter(Account.codice.in_(["1002", "1.01.02.01"])).first()
-    acc_ricavo = Account.query.filter(Account.codice.in_(["4101", "4.01.01.01"])).first()
-    acc_iva = Account.query.filter(Account.codice.in_(["2201", "2.02.01.01"])).first()
+    acc_ricavo = causal_pos.conto_avere if (causal_pos and causal_pos.conto_avere) else Account.query.filter(Account.codice.in_(["4101", "4.01.01.01"])).first()
+    acc_iva = causal_pos.conto_iva if (causal_pos and causal_pos.conto_iva) else Account.query.filter(Account.codice.in_(["2201", "2.02.01.01"])).first()
 
     acc_dare = acc_pos if metodo_pagamento in ['pos_carta', 'pos', 'carta'] and acc_pos else acc_cassa
 
@@ -3085,6 +3339,7 @@ def create_pos_sale():
             data_registrazione=date.today(),
             data_competenza=date.today(),
             causale=f"Corrispettivo di Cassa {numero_scontrino}",
+            causale_id=causal_pos.id if causal_pos else None,
             totale_dare=totale_lordo,
             totale_avere=totale_lordo,
             stato="confermata"
