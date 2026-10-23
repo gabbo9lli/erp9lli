@@ -1,5 +1,4 @@
 import os
-import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -17,20 +16,11 @@ if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=connect_args)
-_SessionFactory = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
-
-def SessionLocal():
-    conftest = sys.modules.get('conftest')
-    if conftest and getattr(conftest, '_current_test_session', None) is not None:
-        return conftest._current_test_session
-    return _SessionFactory()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
 
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
-        # Chiude solo se non è la sessione di test attiva gestita dal fixture
-        conftest = sys.modules.get('conftest')
-        if not (conftest and getattr(conftest, '_current_test_session', None) is db):
-            db.close()
+        db.close()

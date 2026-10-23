@@ -1,8 +1,8 @@
 import pytest
 from datetime import date
-from models import db, Partner, Product, CustomerOrder, OrderItem
+from models import Partner, Product, CustomerOrder, OrderItem
 
-def test_get_modules_endpoint(client):
+def test_get_modules_endpoint(client, db_session):
     res = client.get('/api/modules')
     assert res.status_code == 200
     data = res.get_json()
@@ -13,53 +13,51 @@ def test_get_modules_endpoint(client):
     assert "accounting" in data
     assert data["anagrafiche"] is True
 
-def test_order_model_persistence_and_residual(client):
-    with client.application.app_context():
-        p = Partner(ragione_sociale="Cliente Ordine Test", tipo="cliente")
-        prod = Product(codice="ART-ORD-1", descrizione="Mele Bio", prezzo_vendita=2.5)
-        db.session.add_all([p, prod])
-        db.session.commit()
+def test_order_model_persistence_and_residual(client, db_session):
+    p = Partner(ragione_sociale="Cliente Ordine Test", tipo="cliente")
+    prod = Product(codice="ART-ORD-1", descrizione="Mele Bio", prezzo_vendita=2.5)
+    db_session.add_all([p, prod])
+    db_session.commit()
 
-        order = CustomerOrder(
-            numero=1,
-            anno=2026,
-            numero_completo="ORD-2026-0001",
-            data_ordine=date.today(),
-            cliente_id=p.id,
-            stato="aperto"
-        )
-        db.session.add(order)
-        db.session.commit()
+    order = CustomerOrder(
+        numero=1,
+        anno=2026,
+        numero_completo="ORD-2026-0001",
+        data_ordine=date.today(),
+        cliente_id=p.id,
+        stato="aperto"
+    )
+    db_session.add(order)
+    db_session.commit()
 
-        item = OrderItem(
-            order_id=order.id,
-            product_id=prod.id,
-            sequenza=5,
-            descrizione=prod.descrizione,
-            colli_ordinati=10,
-            quantita_ordinata=100.0,
-            colli_consegnati=4,
-            quantita_consegnata=40.0,
-            prezzo_unitario=2.5
-        )
-        db.session.add(item)
-        db.session.commit()
+    item = OrderItem(
+        order_id=order.id,
+        product_id=prod.id,
+        sequenza=5,
+        descrizione=prod.descrizione,
+        colli_ordinati=10,
+        quantita_ordinata=100.0,
+        colli_consegnati=4,
+        quantita_consegnata=40.0,
+        prezzo_unitario=2.5
+    )
+    db_session.add(item)
+    db_session.commit()
 
-        assert order.id is not None
-        assert len(order.items) == 1
-        assert item.quantita_residua == 60.0
+    assert order.id is not None
+    assert len(order.items) == 1
+    assert item.quantita_residua == 60.0
 
-def test_create_order_with_step5_sequences(client):
+def test_create_order_with_step5_sequences(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Supermercato Bio Ordini", tipo="cliente")
-        prod1 = Product(codice="ART-MELE", descrizione="Mele Golden Bio", prezzo_vendita=2.5)
-        prod2 = Product(codice="ART-PERE", descrizione="Pere Abate Bio", prezzo_vendita=3.0)
-        db.session.add_all([customer, prod1, prod2])
-        db.session.commit()
-        c_id, p1_id, p2_id = customer.id, prod1.id, prod2.id
+    customer = Partner(ragione_sociale="Supermercato Bio Ordini", tipo="cliente")
+    prod1 = Product(codice="ART-MELE", descrizione="Mele Golden Bio", prezzo_vendita=2.5)
+    prod2 = Product(codice="ART-PERE", descrizione="Pere Abate Bio", prezzo_vendita=3.0)
+    db_session.add_all([customer, prod1, prod2])
+    db_session.commit()
+    c_id, p1_id, p2_id = customer.id, prod1.id, prod2.id
 
     payload = {
         "cliente_id": c_id,
@@ -81,16 +79,15 @@ def test_create_order_with_step5_sequences(client):
     assert data['items'][1]['sequenza'] == 10
     assert data['items'][0]['quantita_residua'] == 100.0
 
-def test_order_partial_and_full_fulfillment_to_ddt(client):
+def test_order_partial_and_full_fulfillment_to_ddt(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Natura Bio Marche", tipo="cliente")
-        prod = Product(codice="ART-CAROTE", descrizione="Carote Bio", aliquota_iva=4, prezzo_vendita=1.8)
-        db.session.add_all([customer, prod])
-        db.session.commit()
-        c_id, p_id = customer.id, prod.id
+    customer = Partner(ragione_sociale="Natura Bio Marche", tipo="cliente")
+    prod = Product(codice="ART-CAROTE", descrizione="Carote Bio", aliquota_iva=4, prezzo_vendita=1.8)
+    db_session.add_all([customer, prod])
+    db_session.commit()
+    c_id, p_id = customer.id, prod.id
 
     # Create order of 100 Kg
     order_res = client.post('/api/orders', json={

@@ -1,14 +1,14 @@
 import pytest
 import os
-from models import User, db
+from models import User
 
-def test_api_me_unauthenticated_production(client):
+def test_api_me_unauthenticated_production(client, db_session):
     # In non-development mode or when headers are missing
     res = client.get('/api/me')
     assert res.status_code == 401
     assert res.get_json()['authenticated'] is False
 
-def test_api_me_auto_provisioning_standard_user(client):
+def test_api_me_auto_provisioning_standard_user(client, db_session):
     headers = {
         'X-Forwarded-Email': 'alice@company.com',
         'X-Forwarded-Preferred-Username': 'alice'
@@ -22,13 +22,12 @@ def test_api_me_auto_provisioning_standard_user(client):
     assert data['role'] == 'User'
 
     # Verify user exists in DB
-    with client.application.app_context():
-        user = User.query.filter_by(email='alice@company.com').first()
-        assert user is not None
-        assert user.role == 'User'
-        assert user.password_hash is None
+    user = db_session.query(User).filter_by(email='alice@company.com').first()
+    assert user is not None
+    assert user.role == 'User'
+    assert user.password_hash is None
 
-def test_api_me_role_mapping_admin(client):
+def test_api_me_role_mapping_admin(client, db_session):
     headers = {
         'X-Forwarded-Email': 'bob@company.com',
         'X-Forwarded-Preferred-Username': 'bob',
@@ -40,7 +39,7 @@ def test_api_me_role_mapping_admin(client):
     assert data['authenticated'] is True
     assert data['role'] == 'Admin'
 
-def test_api_me_existing_user_no_duplicate(client):
+def test_api_me_existing_user_no_duplicate(client, db_session):
     # First call provisions user
     headers = {
         'X-Forwarded-Email': 'carol@company.com',
@@ -53,11 +52,10 @@ def test_api_me_existing_user_no_duplicate(client):
     assert res.status_code == 200
     assert res.get_json()['email'] == 'carol@company.com'
 
-    with client.application.app_context():
-        count = User.query.filter_by(email='carol@company.com').count()
-        assert count == 1
+    count = db_session.query(User).filter_by(email='carol@company.com').count()
+    assert count == 1
 
-def test_require_auth_rbac(client):
+def test_require_auth_rbac(client, db_session):
     # Setup users
     admin_headers = {
         'X-Forwarded-Email': 'superadmin@company.com',

@@ -1,14 +1,14 @@
 import pytest
 from services.barcode_label_service import BarcodeLabelService
 
-def test_barcode_code128_svg_generation():
+def test_barcode_code128_svg_generation(db_session):
     svg = BarcodeLabelService.generate_code128_svg("BIO-ARAN-2026")
     assert svg.startswith("<svg")
     assert svg.endswith("</svg>")
     assert "<rect" in svg
     assert "BIO-ARAN-2026" in svg
 
-def test_pallet_zpl_generation():
+def test_pallet_zpl_generation(db_session):
     data = {
         "descrizione": "Arance Tarocco Bio Sicilia",
         "codice_articolo": "BIO-ARAN-TRC",
@@ -29,7 +29,7 @@ def test_pallet_zpl_generation():
     assert "LOTTO-TRC-01" in zpl
     assert "IT-BIO-009" in zpl
 
-def test_collo_zpl_generation():
+def test_collo_zpl_generation(db_session):
     data = {
         "descrizione": "Pere Abate Bio",
         "codice_articolo": "BIO-PERA-ABT",
@@ -43,7 +43,7 @@ def test_collo_zpl_generation():
     assert "Pere Abate Bio" in zpl
     assert "L-2026-09" in zpl
 
-def test_html_preview_generation():
+def test_html_preview_generation(db_session):
     data = {
         "descrizione": "Kiwi Hayward Bio",
         "codice_articolo": "BIO-KIWI-HAY",
@@ -64,7 +64,7 @@ def test_html_preview_generation():
     assert "Kiwi Hayward Bio" in html_collo
     assert "<svg" in html_collo
 
-def test_api_labels_generate_endpoint(client):
+def test_api_labels_generate_endpoint(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
@@ -92,45 +92,44 @@ def test_api_labels_generate_endpoint(client):
     assert "html_preview" in data
     assert "Mele Gala Bio" in data["html_preview"]
 
-def test_api_delivery_note_labels_generation(client):
+def test_api_delivery_note_labels_generation(client, db_session):
     from datetime import date
-    from models import db, Partner, Product, DeliveryNote, DeliveryNoteItem, SystemEvent
+    from models import Partner, Product, DeliveryNote, DeliveryNoteItem, SystemEvent
 
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        cli = Partner(ragione_sociale="Supermercati Bio SpA", tipo="cliente", nazione="IT")
-        prod = Product(codice="BIO-ARAN-LBL", descrizione="Arance Bellarossa Bio", prezzo_vendita=2.0, in_scadenza=True)
-        db.session.add_all([cli, prod])
-        db.session.commit()
+    cli = Partner(ragione_sociale="Supermercati Bio SpA", tipo="cliente", nazione="IT")
+    prod = Product(codice="BIO-ARAN-LBL", descrizione="Arance Bellarossa Bio", prezzo_vendita=2.0, in_scadenza=True)
+    db_session.add_all([cli, prod])
+    db_session.commit()
 
-        ddt = DeliveryNote(
-            numero=10,
-            anno=2026,
-            numero_completo="DDT-2026-0010",
-            data_documento=date(2026, 10, 22),
-            cliente_id=cli.id,
-            colli_totali=50,
-            peso_totale_netto=500.0,
-            stato="confermato"
-        )
-        db.session.add(ddt)
-        db.session.commit()
+    ddt = DeliveryNote(
+        numero=10,
+        anno=2026,
+        numero_completo="DDT-2026-0010",
+        data_documento=date(2026, 10, 22),
+        cliente_id=cli.id,
+        colli_totali=50,
+        peso_totale_netto=500.0,
+        stato="confermato"
+    )
+    db_session.add(ddt)
+    db_session.commit()
 
-        item = DeliveryNoteItem(
-            delivery_note_id=ddt.id,
-            product_id=prod.id,
-            descrizione=prod.descrizione,
-            colli=50,
-            quantita=500.0,
-            prezzo_unitario=2.0,
-            lotto="LOTTO-DDT-LBL",
-            data_scadenza=date(2026, 11, 25)
-        )
-        db.session.add(item)
-        db.session.commit()
-        ddt_id = ddt.id
+    item = DeliveryNoteItem(
+        delivery_note_id=ddt.id,
+        product_id=prod.id,
+        descrizione=prod.descrizione,
+        colli=50,
+        quantita=500.0,
+        prezzo_unitario=2.0,
+        lotto="LOTTO-DDT-LBL",
+        data_scadenza=date(2026, 11, 25)
+    )
+    db_session.add(item)
+    db_session.commit()
+    ddt_id = ddt.id
 
     res = client.get(f'/api/delivery-notes/{ddt_id}/labels', headers=admin_headers)
     assert res.status_code == 200
@@ -143,12 +142,11 @@ def test_api_delivery_note_labels_generation(client):
     assert "Arance Bellarossa Bio" in lbl["html_preview"]
 
     # Check Event Bus emission
-    with client.application.app_context():
-        ev = SystemEvent.query.filter_by(entita_tipo="delivery_note", entita_id=ddt_id).first()
-        assert ev is not None
-        assert ev.azione == "stampa_etichette_barcode"
+    ev = db_session.query(SystemEvent).filter_by(entita_tipo="delivery_note", entita_id=ddt_id).first()
+    assert ev is not None
+    assert ev.azione == "stampa_etichette_barcode"
 
-def test_barcode_label_utf8_and_escaping():
+def test_barcode_label_utf8_and_escaping(db_session):
     data = {
         "descrizione": "Pere Qualità Extra & Bio <1>",
         "codice_articolo": "BIO&PERA",

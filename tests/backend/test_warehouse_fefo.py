@@ -1,53 +1,51 @@
 import pytest
 from datetime import date
-from models import db, Partner, Product, PurchaseDeliveryNote, PurchaseDeliveryNoteItem
+from models import Partner, Product, PurchaseDeliveryNote, PurchaseDeliveryNoteItem
 
-def test_purchase_delivery_note_model(client):
-    with client.application.app_context():
-        supplier = Partner(ragione_sociale="BioProduttori Romagna", tipo="fornitore")
-        prod = Product(codice="ART-BIO-CARICO", descrizione="Pesche Bio", in_scadenza=True, prezzo_acquisto=1.2)
-        db.session.add_all([supplier, prod])
-        db.session.commit()
+def test_purchase_delivery_note_model(client, db_session):
+    supplier = Partner(ragione_sociale="BioProduttori Romagna", tipo="fornitore")
+    prod = Product(codice="ART-BIO-CARICO", descrizione="Pesche Bio", in_scadenza=True, prezzo_acquisto=1.2)
+    db_session.add_all([supplier, prod])
+    db_session.commit()
 
-        pdn = PurchaseDeliveryNote(
-            numero_documento_fornitore="DDT-998/F",
-            data_documento=date.today(),
-            data_ricezione=date.today(),
-            fornitore_id=supplier.id,
-            colli_totali=10,
-            peso_totale_netto=100.0,
-            totale_imponibile=120.0
-        )
-        db.session.add(pdn)
-        db.session.commit()
+    pdn = PurchaseDeliveryNote(
+        numero_documento_fornitore="DDT-998/F",
+        data_documento=date.today(),
+        data_ricezione=date.today(),
+        fornitore_id=supplier.id,
+        colli_totali=10,
+        peso_totale_netto=100.0,
+        totale_imponibile=120.0
+    )
+    db_session.add(pdn)
+    db_session.commit()
 
-        item = PurchaseDeliveryNoteItem(
-            purchase_delivery_note_id=pdn.id,
-            product_id=prod.id,
-            descrizione=prod.descrizione,
-            colli=10,
-            quantita=100.0,
-            prezzo_unitario=1.2,
-            lotto="LOTTO-PESCA-2026",
-            data_scadenza=date.today()
-        )
-        db.session.add(item)
-        db.session.commit()
+    item = PurchaseDeliveryNoteItem(
+        purchase_delivery_note_id=pdn.id,
+        product_id=prod.id,
+        descrizione=prod.descrizione,
+        colli=10,
+        quantita=100.0,
+        prezzo_unitario=1.2,
+        lotto="LOTTO-PESCA-2026",
+        data_scadenza=date.today()
+    )
+    db_session.add(item)
+    db_session.commit()
 
-        assert pdn.id is not None
-        assert len(pdn.items) == 1
-        assert pdn.numero_documento_fornitore == "DDT-998/F"
+    assert pdn.id is not None
+    assert len(pdn.items) == 1
+    assert pdn.numero_documento_fornitore == "DDT-998/F"
 
-def test_create_purchase_validation_lotto_bio(client):
+def test_create_purchase_validation_lotto_bio(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        supplier = Partner(ragione_sociale="Fornitore Mele Bio", tipo="fornitore")
-        prod = Product(codice="ART-MELE-SCAD", descrizione="Mele Bio con scadenza", in_scadenza=True, prezzo_acquisto=1.5)
-        db.session.add_all([supplier, prod])
-        db.session.commit()
-        s_id, p_id = supplier.id, prod.id
+    supplier = Partner(ragione_sociale="Fornitore Mele Bio", tipo="fornitore")
+    prod = Product(codice="ART-MELE-SCAD", descrizione="Mele Bio con scadenza", in_scadenza=True, prezzo_acquisto=1.5)
+    db_session.add_all([supplier, prod])
+    db_session.commit()
+    s_id, p_id = supplier.id, prod.id
 
     # 1. Missing lotto -> should return 400
     res_err1 = client.post('/api/purchases', json={
@@ -78,17 +76,16 @@ def test_create_purchase_validation_lotto_bio(client):
     assert data['numero_documento_fornitore'] == "DDT-001/F"
     assert len(data['items']) == 1
 
-def test_stock_running_calculation(client):
+def test_stock_running_calculation(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        supplier = Partner(ragione_sociale="Fornitore Orto Bio", tipo="fornitore")
-        customer = Partner(ragione_sociale="Cliente Orto Bio", tipo="cliente")
-        prod = Product(codice="ART-KIWI-BIO", descrizione="Kiwi Bio", in_scadenza=True, prezzo_acquisto=2.0, prezzo_vendita=3.5)
-        db.session.add_all([supplier, customer, prod])
-        db.session.commit()
-        s_id, c_id, p_id = supplier.id, customer.id, prod.id
+    supplier = Partner(ragione_sociale="Fornitore Orto Bio", tipo="fornitore")
+    customer = Partner(ragione_sociale="Cliente Orto Bio", tipo="cliente")
+    prod = Product(codice="ART-KIWI-BIO", descrizione="Kiwi Bio", in_scadenza=True, prezzo_acquisto=2.0, prezzo_vendita=3.5)
+    db_session.add_all([supplier, customer, prod])
+    db_session.commit()
+    s_id, c_id, p_id = supplier.id, customer.id, prod.id
 
     # 1. Carico fornitore 100 Kg LOTTO-KIWI-1
     client.post('/api/purchases', json={
@@ -113,16 +110,15 @@ def test_stock_running_calculation(client):
     assert kiwi_stock['giacenza_kg'] == 70.0
     assert kiwi_stock['colli_disponibili'] == 7
 
-def test_fefo_suggestion_ordering(client):
+def test_fefo_suggestion_ordering(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        supplier = Partner(ragione_sociale="Fornitore Arance", tipo="fornitore")
-        prod = Product(codice="ART-ARAN-FEFO", descrizione="Arance Bio", in_scadenza=True, prezzo_acquisto=1.8)
-        db.session.add_all([supplier, prod])
-        db.session.commit()
-        s_id, p_id = supplier.id, prod.id
+    supplier = Partner(ragione_sociale="Fornitore Arance", tipo="fornitore")
+    prod = Product(codice="ART-ARAN-FEFO", descrizione="Arance Bio", in_scadenza=True, prezzo_acquisto=1.8)
+    db_session.add_all([supplier, prod])
+    db_session.commit()
+    s_id, p_id = supplier.id, prod.id
 
     # Carico 1: Scadenza più lontana (25/11/2026)
     client.post('/api/purchases', json={

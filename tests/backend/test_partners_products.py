@@ -1,40 +1,38 @@
 import pytest
-from models import db, Partner, Product
+from models import Partner, Product
 
-def test_partner_model_creation(client):
-    with client.application.app_context():
-        p = Partner(
-            ragione_sociale="Azienda Agricola Bio",
-            tipo="fornitore",
-            partita_iva="IT12345678901",
-            citta="Reggio Emilia",
-            provincia="RE"
-        )
-        db.session.add(p)
-        db.session.commit()
-        assert p.id is not None
-        assert p.codice_sdi == "0000000"
-        assert p.nazione == "IT"
-        assert p.attivo is True
+def test_partner_model_creation(client, db_session):
+    p = Partner(
+        ragione_sociale="Azienda Agricola Bio",
+        tipo="fornitore",
+        partita_iva="IT12345678901",
+        citta="Reggio Emilia",
+        provincia="RE"
+    )
+    db_session.add(p)
+    db_session.commit()
+    assert p.id is not None
+    assert p.codice_sdi == "0000000"
+    assert p.nazione == "IT"
+    assert p.attivo is True
 
-def test_product_model_creation(client):
-    with client.application.app_context():
-        prod = Product(
-            codice="BIO-MELA",
-            descrizione="Mele Golden Bio",
-            categoria="fresco",
-            prezzo_vendita=2.50,
-            prezzo_acquisto=1.20,
-            aliquota_iva=4
-        )
-        db.session.add(prod)
-        db.session.commit()
-        assert prod.id is not None
-        assert prod.in_scadenza is False
-        assert prod.unita_misura == "KG"
-        assert prod.attivo is True
+def test_product_model_creation(client, db_session):
+    prod = Product(
+        codice="BIO-MELA",
+        descrizione="Mele Golden Bio",
+        categoria="fresco",
+        prezzo_vendita=2.50,
+        prezzo_acquisto=1.20,
+        aliquota_iva=4
+    )
+    db_session.add(prod)
+    db_session.commit()
+    assert prod.id is not None
+    assert prod.in_scadenza is False
+    assert prod.unita_misura == "KG"
+    assert prod.attivo is True
 
-def test_api_partners_crud(client):
+def test_api_partners_crud(client, db_session):
     admin_headers = {
         'X-Forwarded-Email': 'admin@company.com',
         'X-Forwarded-Groups': 'admin'
@@ -71,7 +69,7 @@ def test_api_partners_crud(client):
     del_res = client.delete(f'/api/partners/{created_id}', headers=admin_headers)
     assert del_res.status_code == 200
 
-def test_api_products_crud(client):
+def test_api_products_crud(client, db_session):
     admin_headers = {
         'X-Forwarded-Email': 'admin@company.com',
         'X-Forwarded-Groups': 'admin'
@@ -114,7 +112,7 @@ def test_api_products_crud(client):
     del_res = client.delete(f'/api/products/{created_id}', headers=admin_headers)
     assert del_res.status_code == 200
 
-def test_api_rbac_partner_product(client):
+def test_api_rbac_partner_product(client, db_session):
     user_headers = {
         'X-Forwarded-Email': 'user@company.com'
     }

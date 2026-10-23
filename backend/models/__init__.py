@@ -1,15 +1,4 @@
 from .base import Base, metadata
-
-class _DBCompatShim:
-    Model = Base
-    metadata = metadata
-    @property
-    def session(self):
-        from database import SessionLocal
-        return SessionLocal()
-
-db = _DBCompatShim()
-
 from .user import User
 from .partner import Partner
 from .product import Product
@@ -43,7 +32,6 @@ from .ecommerce_sync_log import EcommerceSyncLog
 __all__ = [
     "Base",
     "metadata",
-    "db",
     "User",
     "Partner",
     "Product",

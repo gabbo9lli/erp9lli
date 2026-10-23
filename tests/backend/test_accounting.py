@@ -1,46 +1,44 @@
 import pytest
 from datetime import date
-from models import db, Account, JournalEntry, JournalItem
+from models import Account, JournalEntry, JournalItem
 
-def test_account_and_journal_models(client):
-    with client.application.app_context():
-        acc_cassa = Account(codice="1001", nome="Cassa Contanti", tipo="attivo")
-        acc_banca = Account(codice="1002", nome="Banca c/c", tipo="attivo")
-        db.session.add_all([acc_cassa, acc_banca])
-        db.session.commit()
+def test_account_and_journal_models(client, db_session):
+    acc_cassa = Account(codice="1001", nome="Cassa Contanti", tipo="attivo")
+    acc_banca = Account(codice="1002", nome="Banca c/c", tipo="attivo")
+    db_session.add_all([acc_cassa, acc_banca])
+    db_session.commit()
 
-        entry = JournalEntry(
-            numero=1,
-            anno=2026,
-            numero_completo="PN-2026-0001",
-            data_registrazione=date.today(),
-            data_competenza=date.today(),
-            causale="Versamento contanti in banca",
-            totale_dare=500.0,
-            totale_avere=500.0,
-            stato="confermata"
-        )
-        db.session.add(entry)
-        db.session.commit()
+    entry = JournalEntry(
+        numero=1,
+        anno=2026,
+        numero_completo="PN-2026-0001",
+        data_registrazione=date.today(),
+        data_competenza=date.today(),
+        causale="Versamento contanti in banca",
+        totale_dare=500.0,
+        totale_avere=500.0,
+        stato="confermata"
+    )
+    db_session.add(entry)
+    db_session.commit()
 
-        item1 = JournalItem(journal_entry_id=entry.id, account_id=acc_banca.id, dare=500.0, avere=0.0)
-        item2 = JournalItem(journal_entry_id=entry.id, account_id=acc_cassa.id, dare=0.0, avere=500.0)
-        db.session.add_all([item1, item2])
-        db.session.commit()
+    item1 = JournalItem(journal_entry_id=entry.id, account_id=acc_banca.id, dare=500.0, avere=0.0)
+    item2 = JournalItem(journal_entry_id=entry.id, account_id=acc_cassa.id, dare=0.0, avere=500.0)
+    db_session.add_all([item1, item2])
+    db_session.commit()
 
-        assert entry.id is not None
-        assert len(entry.items) == 2
-        assert entry.numero_completo == "PN-2026-0001"
+    assert entry.id is not None
+    assert len(entry.items) == 2
+    assert entry.numero_completo == "PN-2026-0001"
 
-def test_unbalanced_entry_rejected(client):
+def test_unbalanced_entry_rejected(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        from seed_accounting import seed_chart_of_accounts
-        seed_chart_of_accounts()
-        acc_banca = Account.query.filter_by(codice="1002").first()
-        acc_ricavi = Account.query.filter_by(codice="4101").first()
+    from seed_accounting import seed_chart_of_accounts
+    seed_chart_of_accounts(db_session)
+    acc_banca = db_session.query(Account).filter_by(codice="1002").first()
+    acc_ricavi = db_session.query(Account).filter_by(codice="4101").first()
 
     payload = {
         "causale": "Scrittura sbilanciata test",
@@ -53,15 +51,14 @@ def test_unbalanced_entry_rejected(client):
     assert res.status_code == 400
     assert "sbilanciata" in res.get_json()['error'].lower()
 
-def test_balanced_entry_creation(client):
+def test_balanced_entry_creation(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        from seed_accounting import seed_chart_of_accounts
-        seed_chart_of_accounts()
-        acc_banca = Account.query.filter_by(codice="1002").first()
-        acc_ricavi = Account.query.filter_by(codice="4101").first()
+    from seed_accounting import seed_chart_of_accounts
+    seed_chart_of_accounts(db_session)
+    acc_banca = db_session.query(Account).filter_by(codice="1002").first()
+    acc_ricavi = db_session.query(Account).filter_by(codice="4101").first()
 
     payload = {
         "causale": "Vendita bio incasso immediato",
@@ -77,15 +74,14 @@ def test_balanced_entry_creation(client):
     assert data['totale_dare'] == 150.0
     assert data['totale_avere'] == 150.0
 
-def test_libro_giornale_report_json_and_csv(client):
+def test_libro_giornale_report_json_and_csv(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        from seed_accounting import seed_chart_of_accounts
-        seed_chart_of_accounts()
-        acc_banca = Account.query.filter_by(codice="1002").first()
-        acc_ricavi = Account.query.filter_by(codice="4101").first()
+    from seed_accounting import seed_chart_of_accounts
+    seed_chart_of_accounts(db_session)
+    acc_banca = db_session.query(Account).filter_by(codice="1002").first()
+    acc_ricavi = db_session.query(Account).filter_by(codice="4101").first()
 
     client.post('/api/accounting/entries', json={
         "causale": "Test libro giornale",
@@ -110,16 +106,15 @@ def test_libro_giornale_report_json_and_csv(client):
     csv_text = res_csv.data.decode('utf-8')
     assert "Data;Numero;Causale;Codice;Conto;Partner;Dare;Avere" in csv_text
 
-def test_mastro_running_balance(client):
+def test_mastro_running_balance(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        from seed_accounting import seed_chart_of_accounts
-        seed_chart_of_accounts()
-        acc_banca = Account.query.filter_by(codice="1002").first()
-        acc_ricavi = Account.query.filter_by(codice="4101").first()
-        b_id = acc_banca.id
+    from seed_accounting import seed_chart_of_accounts
+    seed_chart_of_accounts(db_session)
+    acc_banca = db_session.query(Account).filter_by(codice="1002").first()
+    acc_ricavi = db_session.query(Account).filter_by(codice="4101").first()
+    b_id = acc_banca.id
 
     client.post('/api/accounting/entries', json={
         "causale": "Test mastro",
@@ -141,15 +136,14 @@ def test_mastro_running_balance(client):
     assert res_csv.status_code == 200
     assert 'text/csv' in res_csv.headers['Content-Type']
 
-def test_bilancio_di_verifica_balance(client):
+def test_bilancio_di_verifica_balance(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        from seed_accounting import seed_chart_of_accounts
-        seed_chart_of_accounts()
-        acc_banca = Account.query.filter_by(codice="1002").first()
-        acc_ricavi = Account.query.filter_by(codice="4101").first()
+    from seed_accounting import seed_chart_of_accounts
+    seed_chart_of_accounts(db_session)
+    acc_banca = db_session.query(Account).filter_by(codice="1002").first()
+    acc_ricavi = db_session.query(Account).filter_by(codice="4101").first()
 
     client.post('/api/accounting/entries', json={
         "causale": "Test bilancio",

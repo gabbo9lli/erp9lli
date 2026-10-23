@@ -27,7 +27,7 @@ async def handle_ecommerce_order_webhook(request: Request, db: Session = Depends
         payload = {}
 
     try:
-        order, is_new = EcommerceService.process_incoming_order(payload, db=db)
+        order, is_new = EcommerceService.process_incoming_order(db=db, payload=payload)
         status_code = 201 if is_new else 200
         return JSONResponse(status_code=status_code, content=order.to_dict())
     except Exception as e:

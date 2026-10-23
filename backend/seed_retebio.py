@@ -323,39 +323,30 @@ PRODUCTS_DATA = [
     }
 ]
 
-def seed_data(db: Session = None):
-    close_session = False
-    if db is None:
-        db = SessionLocal()
-        close_session = True
+def seed_data(db: Session) -> tuple[int, int]:
+    added_partners = 0
+    added_products = 0
 
-    try:
-        added_partners = 0
-        added_products = 0
+    # 1. Popola i Partner
+    for p_data in PARTNERS_DATA:
+        existing = db.query(Partner).filter_by(ragione_sociale=p_data["ragione_sociale"]).first()
+        if not existing:
+            partner = Partner(**p_data)
+            db.add(partner)
+            added_partners += 1
 
-        # 1. Popola i Partner
-        for p_data in PARTNERS_DATA:
-            existing = db.query(Partner).filter_by(ragione_sociale=p_data["ragione_sociale"]).first()
-            if not existing:
-                partner = Partner(**p_data)
-                db.add(partner)
-                added_partners += 1
+    # 2. Popola i Prodotti
+    for prod_data in PRODUCTS_DATA:
+        existing = db.query(Product).filter_by(codice=prod_data["codice"]).first()
+        if not existing:
+            product = Product(**prod_data)
+            db.add(product)
+            added_products += 1
 
-        # 2. Popola i Prodotti
-        for prod_data in PRODUCTS_DATA:
-            existing = db.query(Product).filter_by(codice=prod_data["codice"]).first()
-            if not existing:
-                product = Product(**prod_data)
-                db.add(product)
-                added_products += 1
+    if added_partners > 0 or added_products > 0:
+        db.commit()
 
-        if added_partners > 0 or added_products > 0:
-            db.commit()
-
-        return added_partners, added_products
-    finally:
-        if close_session:
-            db.close()
+    return added_partners, added_products
 
 if __name__ == '__main__':
     with SessionLocal() as db:

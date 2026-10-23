@@ -1,61 +1,59 @@
 import pytest
 from datetime import date
-from models import db, Partner, Product, CmrDocument, CmrItem
+from models import Partner, Product, CmrDocument, CmrItem
 
-def test_cmr_models_persistence(client):
-    with client.application.app_context():
-        dest = Partner(ragione_sociale="Bio c' Bon Bruxelles", nazione="BE", tipo="cliente")
-        vett = Partner(ragione_sociale="LD Trasporti Srl", nazione="IT", tipo="vettore")
-        db.session.add_all([dest, vett])
-        db.session.commit()
+def test_cmr_models_persistence(client, db_session):
+    dest = Partner(ragione_sociale="Bio c' Bon Bruxelles", nazione="BE", tipo="cliente")
+    vett = Partner(ragione_sociale="LD Trasporti Srl", nazione="IT", tipo="vettore")
+    db_session.add_all([dest, vett])
+    db_session.commit()
 
-        cmr = CmrDocument(
-            numero=1,
-            anno=2026,
-            numero_completo="CMR-2026-0001",
-            data_documento=date.today(),
-            cliente_id=dest.id,
-            vettore_id=vett.id,
-            luogo_carico="ALESSANDRIA (AL)",
-            luogo_consegna="Rue de la Loi 15, Bruxelles (BE)",
-            targa_automezzo="FX982KJ",
-            targa_rimorchio="XA112LL",
-            totale_colli=50,
-            peso_totale_netto=500.0,
-            peso_totale_lordo=525.0
-        )
-        db.session.add(cmr)
-        db.session.commit()
+    cmr = CmrDocument(
+        numero=1,
+        anno=2026,
+        numero_completo="CMR-2026-0001",
+        data_documento=date.today(),
+        cliente_id=dest.id,
+        vettore_id=vett.id,
+        luogo_carico="ALESSANDRIA (AL)",
+        luogo_consegna="Rue de la Loi 15, Bruxelles (BE)",
+        targa_automezzo="FX982KJ",
+        targa_rimorchio="XA112LL",
+        totale_colli=50,
+        peso_totale_netto=500.0,
+        peso_totale_lordo=525.0
+    )
+    db_session.add(cmr)
+    db_session.commit()
 
-        item = CmrItem(
-            cmr_document_id=cmr.id,
-            riga_numero=1,
-            contrassegno_lotto="LOTTO-BIO-2026",
-            numero_colli=50,
-            modo_imballaggio="Casse su Pallet EPAL",
-            natura_merce="Arance Tarocco Biologiche",
-            codice_nc="08051020",
-            peso_netto_kg=500.0,
-            peso_lordo_kg=525.0
-        )
-        db.session.add(item)
-        db.session.commit()
+    item = CmrItem(
+        cmr_document_id=cmr.id,
+        riga_numero=1,
+        contrassegno_lotto="LOTTO-BIO-2026",
+        numero_colli=50,
+        modo_imballaggio="Casse su Pallet EPAL",
+        natura_merce="Arance Tarocco Biologiche",
+        codice_nc="08051020",
+        peso_netto_kg=500.0,
+        peso_lordo_kg=525.0
+    )
+    db_session.add(item)
+    db_session.commit()
 
-        assert cmr.id is not None
-        assert len(cmr.items) == 1
-        assert cmr.numero_completo == "CMR-2026-0001"
+    assert cmr.id is not None
+    assert len(cmr.items) == 1
+    assert cmr.numero_completo == "CMR-2026-0001"
 
-def test_create_cmr_from_ddt_with_alessandria_hub(client):
+def test_create_cmr_from_ddt_with_alessandria_hub(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        dest = Partner(ragione_sociale="Bio c' Bon Bruxelles", nazione="BE", citta="Bruxelles", indirizzo="Rue de la Loi 15", tipo="cliente")
-        vett = Partner(ragione_sociale="LD Trasporti Srl", nazione="IT", tipo="vettore")
-        prod = Product(codice="ART-BIO-EXP", descrizione="Arance Bio Export", codice_nc="08051020", prezzo_vendita=2.5)
-        db.session.add_all([dest, vett, prod])
-        db.session.commit()
-        d_id, v_id, p_id = dest.id, vett.id, prod.id
+    dest = Partner(ragione_sociale="Bio c' Bon Bruxelles", nazione="BE", citta="Bruxelles", indirizzo="Rue de la Loi 15", tipo="cliente")
+    vett = Partner(ragione_sociale="LD Trasporti Srl", nazione="IT", tipo="vettore")
+    prod = Product(codice="ART-BIO-EXP", descrizione="Arance Bio Export", codice_nc="08051020", prezzo_vendita=2.5)
+    db_session.add_all([dest, vett, prod])
+    db_session.commit()
+    d_id, v_id, p_id = dest.id, vett.id, prod.id
 
     # Create DDT for foreign client with LD Trasporti
     ddt_res = client.post('/api/delivery-notes', json={
@@ -80,16 +78,15 @@ def test_create_cmr_from_ddt_with_alessandria_hub(client):
     assert cmr_data['peso_totale_netto'] == 400.0
     assert cmr_data['ha_allegato_righe'] is False
 
-def test_cmr_21_rows_rule_and_attachment_flag(client):
+def test_cmr_21_rows_rule_and_attachment_flag(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        dest = Partner(ragione_sociale="Bio Markt Munchen", nazione="DE", citta="Munchen", tipo="cliente")
-        prod = Product(codice="ART-GEN", descrizione="Ortaggio Bio", prezzo_vendita=1.0)
-        db.session.add_all([dest, prod])
-        db.session.commit()
-        d_id, p_id = dest.id, prod.id
+    dest = Partner(ragione_sociale="Bio Markt Munchen", nazione="DE", citta="Munchen", tipo="cliente")
+    prod = Product(codice="ART-GEN", descrizione="Ortaggio Bio", prezzo_vendita=1.0)
+    db_session.add_all([dest, prod])
+    db_session.commit()
+    d_id, p_id = dest.id, prod.id
 
     items_25 = [
         {"natura_merce": f"Articolo {i}", "numero_colli": 2, "peso_netto_kg": 20.0, "peso_lordo_kg": 21.0}
@@ -106,15 +103,14 @@ def test_cmr_21_rows_rule_and_attachment_flag(client):
     assert len(cmr_data['items']) == 25
     assert cmr_data['ha_allegato_righe'] is True
 
-def test_cmr_print_format_boxes(client):
+def test_cmr_print_format_boxes(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        dest = Partner(ragione_sociale="Bio Shop Paris", nazione="FR", citta="Paris", indirizzo="Rue de Rivoli", tipo="cliente")
-        db.session.add(dest)
-        db.session.commit()
-        d_id = dest.id
+    dest = Partner(ragione_sociale="Bio Shop Paris", nazione="FR", citta="Paris", indirizzo="Rue de Rivoli", tipo="cliente")
+    db_session.add(dest)
+    db_session.commit()
+    d_id = dest.id
 
     res = client.post('/api/cmr', json={
         "cliente_id": d_id,

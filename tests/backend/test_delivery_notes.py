@@ -1,53 +1,51 @@
 import pytest
 from datetime import date, datetime
-from models import db, Partner, Product, DeliveryNote, DeliveryNoteItem
+from models import Partner, Product, DeliveryNote, DeliveryNoteItem
 
-def test_delivery_note_model_creation(client):
-    with client.application.app_context():
-        client_p = Partner(ragione_sociale="Supermercato Bio", tipo="cliente")
-        prod = Product(codice="BIO-PERA", descrizione="Pere Abate Bio", categoria="fresco", prezzo_vendita=3.20)
-        db.session.add_all([client_p, prod])
-        db.session.commit()
+def test_delivery_note_model_creation(client, db_session):
+    client_p = Partner(ragione_sociale="Supermercato Bio", tipo="cliente")
+    prod = Product(codice="BIO-PERA", descrizione="Pere Abate Bio", categoria="fresco", prezzo_vendita=3.20)
+    db_session.add_all([client_p, prod])
+    db_session.commit()
 
-        ddt = DeliveryNote(
-            numero=1,
-            anno=2026,
-            numero_completo="DDT-2026-0001",
-            data_documento=date.today(),
-            cliente_id=client_p.id,
-            causale_trasporto="Vendita"
-        )
-        db.session.add(ddt)
-        db.session.commit()
+    ddt = DeliveryNote(
+        numero=1,
+        anno=2026,
+        numero_completo="DDT-2026-0001",
+        data_documento=date.today(),
+        cliente_id=client_p.id,
+        causale_trasporto="Vendita"
+    )
+    db_session.add(ddt)
+    db_session.commit()
 
-        item = DeliveryNoteItem(
-            delivery_note_id=ddt.id,
-            product_id=prod.id,
-            descrizione=prod.descrizione,
-            colli=10,
-            quantita=100.0,
-            prezzo_unitario=3.20
-        )
-        db.session.add(item)
-        db.session.commit()
+    item = DeliveryNoteItem(
+        delivery_note_id=ddt.id,
+        product_id=prod.id,
+        descrizione=prod.descrizione,
+        colli=10,
+        quantita=100.0,
+        prezzo_unitario=3.20
+    )
+    db_session.add(item)
+    db_session.commit()
 
-        assert ddt.id is not None
-        assert len(ddt.items) == 1
-        assert ddt.stato == "bozza"
-        assert ddt.numero_completo == "DDT-2026-0001"
+    assert ddt.id is not None
+    assert len(ddt.items) == 1
+    assert ddt.stato == "bozza"
+    assert ddt.numero_completo == "DDT-2026-0001"
 
-def test_create_delivery_note_with_items_and_totals(client):
+def test_create_delivery_note_with_items_and_totals(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Coop Bio Nord", tipo="cliente")
-        carrier = Partner(ragione_sociale="LD Trasporti", tipo="vettore")
-        prod1 = Product(codice="ART-MELA", descrizione="Mele Bio", categoria="fresco", peso_netto=1.0, peso_lordo=1.05, prezzo_vendita=2.50, aliquota_iva=4, in_scadenza=False)
-        prod2 = Product(codice="ART-PERA-2", descrizione="Pere Bio", categoria="fresco", peso_netto=1.0, peso_lordo=1.05, prezzo_vendita=3.00, aliquota_iva=4, in_scadenza=False)
-        db.session.add_all([customer, carrier, prod1, prod2])
-        db.session.commit()
-        cust_id, carr_id, p1_id, p2_id = customer.id, carrier.id, prod1.id, prod2.id
+    customer = Partner(ragione_sociale="Coop Bio Nord", tipo="cliente")
+    carrier = Partner(ragione_sociale="LD Trasporti", tipo="vettore")
+    prod1 = Product(codice="ART-MELA", descrizione="Mele Bio", categoria="fresco", peso_netto=1.0, peso_lordo=1.05, prezzo_vendita=2.50, aliquota_iva=4, in_scadenza=False)
+    prod2 = Product(codice="ART-PERA-2", descrizione="Pere Bio", categoria="fresco", peso_netto=1.0, peso_lordo=1.05, prezzo_vendita=3.00, aliquota_iva=4, in_scadenza=False)
+    db_session.add_all([customer, carrier, prod1, prod2])
+    db_session.commit()
+    cust_id, carr_id, p1_id, p2_id = customer.id, carrier.id, prod1.id, prod2.id
 
     ddt_payload = {
         "cliente_id": cust_id,
@@ -84,16 +82,15 @@ def test_create_delivery_note_with_items_and_totals(client):
     assert data['stato'] == "bozza"
     assert len(data['items']) == 2
 
-def test_auto_numbering_sequential(client):
+def test_auto_numbering_sequential(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Bio Market 2", tipo="cliente")
-        prod = Product(codice="ART-KIWI", descrizione="Kiwi Bio", categoria="fresco", prezzo_vendita=4.0)
-        db.session.add_all([customer, prod])
-        db.session.commit()
-        c_id, p_id = customer.id, prod.id
+    customer = Partner(ragione_sociale="Bio Market 2", tipo="cliente")
+    prod = Product(codice="ART-KIWI", descrizione="Kiwi Bio", categoria="fresco", prezzo_vendita=4.0)
+    db_session.add_all([customer, prod])
+    db_session.commit()
+    c_id, p_id = customer.id, prod.id
 
     payload = {
         "cliente_id": c_id,
@@ -110,16 +107,15 @@ def test_auto_numbering_sequential(client):
     n2 = res2.get_json()['numero']
     assert n2 == n1 + 1
 
-def test_bio_traceability_validation(client):
+def test_bio_traceability_validation(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Cliente Bio Test", tipo="cliente")
-        bio_prod = Product(codice="BIO-UVA", descrizione="Uva Bio Fresca", categoria="fresco", in_scadenza=True, prezzo_vendita=3.0)
-        db.session.add_all([customer, bio_prod])
-        db.session.commit()
-        c_id, p_id = customer.id, bio_prod.id
+    customer = Partner(ragione_sociale="Cliente Bio Test", tipo="cliente")
+    bio_prod = Product(codice="BIO-UVA", descrizione="Uva Bio Fresca", categoria="fresco", in_scadenza=True, prezzo_vendita=3.0)
+    db_session.add_all([customer, bio_prod])
+    db_session.commit()
+    c_id, p_id = customer.id, bio_prod.id
 
     # 1. Missing lotto / scadenza -> Should fail with 400
     invalid_payload = {
@@ -147,16 +143,15 @@ def test_bio_traceability_validation(client):
     assert ok_res.status_code == 201
     assert ok_res.get_json()['items'][0]['lotto'] == "L26-UVA-001"
 
-def test_confirm_delivery_note_and_immutability(client):
+def test_confirm_delivery_note_and_immutability(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Cliente Immutabile", tipo="cliente")
-        prod = Product(codice="ART-PASTA", descrizione="Pasta Bio", categoria="trasformato", prezzo_vendita=1.50)
-        db.session.add_all([customer, prod])
-        db.session.commit()
-        c_id, p_id = customer.id, prod.id
+    customer = Partner(ragione_sociale="Cliente Immutabile", tipo="cliente")
+    prod = Product(codice="ART-PASTA", descrizione="Pasta Bio", categoria="trasformato", prezzo_vendita=1.50)
+    db_session.add_all([customer, prod])
+    db_session.commit()
+    c_id, p_id = customer.id, prod.id
 
     payload = {
         "cliente_id": c_id,

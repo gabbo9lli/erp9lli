@@ -1,14 +1,14 @@
 import pytest
 from models import User
 
-def test_health_check(client):
+def test_health_check(client, db_session):
     res = client.get('/api/health')
     assert res.status_code == 200
     data = res.get_json()
     assert data['flask_status'] == 'UP'
     assert data['database']['status'] == 'UP'
 
-def test_signup_and_signin_jwt(client):
+def test_signup_and_signin_jwt(client, db_session):
     # Signup
     signup_res = client.post('/api/signup', json={
         'email': 'developer@example.com',
@@ -27,7 +27,7 @@ def test_signup_and_signin_jwt(client):
     assert 'access_token' in data
     assert len(data['access_token']) > 10
 
-def test_signin_invalid_credentials(client):
+def test_signin_invalid_credentials(client, db_session):
     res = client.post('/api/signin', json={
         'email': 'nonexistent@example.com',
         'password': 'WrongPassword!'
@@ -35,7 +35,7 @@ def test_signin_invalid_credentials(client):
     assert res.status_code == 401
     assert 'msg' in res.get_json()
 
-def test_login_endpoint(client):
+def test_login_endpoint(client, db_session):
     client.post('/api/signup', json={
         'email': 'loginuser@example.com',
         'password': 'Password123!'
@@ -47,7 +47,7 @@ def test_login_endpoint(client):
     assert res.status_code == 200
     assert res.get_json()['user'] == 'loginuser@example.com'
 
-def test_db_explorer_tables(client):
+def test_db_explorer_tables(client, db_session):
     admin_headers = {
         'X-Forwarded-Email': 'admin@example.com',
         'X-Forwarded-Groups': 'admin'
@@ -60,7 +60,7 @@ def test_db_explorer_tables(client):
     table_names = [t['name'] for t in data['tables']]
     assert 'user' in table_names
 
-def test_db_explorer_sqli_protection(client):
+def test_db_explorer_sqli_protection(client, db_session):
     admin_headers = {
         'X-Forwarded-Email': 'admin@example.com',
         'X-Forwarded-Groups': 'admin'
@@ -75,7 +75,7 @@ def test_db_explorer_sqli_protection(client):
     sqli_res = client.get('/api/db-explorer/user;DROP%20TABLE%20user;/data', headers=admin_headers)
     assert sqli_res.status_code == 404
 
-def test_password_reset_flow(client):
+def test_password_reset_flow(client, db_session):
     client.post('/api/signup', json={
         'email': 'resetuser@example.com',
         'password': 'InitialPassword123!'
@@ -88,10 +88,9 @@ def test_password_reset_flow(client):
     assert forgot_res.status_code == 200
 
     # Retrieve reset token
-    with client.application.app_context():
-        user = User.query.filter_by(email='resetuser@example.com').first()
-        token = user.reset_token
-        assert token is not None
+    user = db_session.query(User).filter_by(email='resetuser@example.com').first()
+    token = user.reset_token
+    assert token is not None
 
     # Reset password with token
     reset_res = client.post('/api/reset-password', json={
@@ -114,7 +113,7 @@ def test_password_reset_flow(client):
     })
     assert login_old.status_code == 401
 
-def test_websocket_connection(client):
+def test_websocket_connection(client, db_session):
     with client.websocket_connect("/ws") as websocket:
         websocket.send_text("ping")
         data = websocket.receive_text()

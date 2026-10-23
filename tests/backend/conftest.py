@@ -13,20 +13,20 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 import pytest
 import httpx
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Query
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 from main import app as fastapi_app
 from database import get_db
-from models import Base, db as models_db
+from models import Base
+import database
 
-# Monkey patch httpx Response per offrire get_json() come Flask Response
+# Monkey patch httpx Response per offrire get_json(), content_type e data
 httpx.Response.get_json = lambda self: self.json()
 httpx.Response.content_type = property(lambda self: self.headers.get("content-type", ""))
 httpx.Response.data = property(lambda self: self.content)
 
-import database
 test_engine = create_engine(
     "sqlite:///:memory:",
     connect_args={"check_same_thread": False},
@@ -36,26 +36,10 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, expire_on_
 
 _current_test_session = None
 
-# Patch database.SessionLocal in conftest per restituire la sessione attiva
 def get_test_session_or_new():
     return _current_test_session if _current_test_session is not None else TestingSessionLocal()
 
 database.SessionLocal = get_test_session_or_new
-
-# Collega property .query a Base per compatibilità retroattiva nei test
-class CurrentQueryProperty:
-    def __get__(self, instance, owner):
-        session = _current_test_session or TestingSessionLocal()
-        return Query(owner, session=session)
-
-Base.query = CurrentQueryProperty()
-
-# Collega property .session allo shim per retrocompatibilità con db.session
-class SessionCompatProperty:
-    def __get__(self, instance, owner):
-        return _current_test_session or TestingSessionLocal()
-
-type(models_db).session = SessionCompatProperty()
 
 @pytest.fixture(scope="function")
 def db_session():
@@ -79,19 +63,6 @@ def client(db_session):
             pass
 
     fastapi_app.dependency_overrides[get_db] = override_get_db
-
-    class AppContextMock:
-        def __enter__(self):
-            return self
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            pass
-
-    class ApplicationMock:
-        def app_context(self):
-            return AppContextMock()
-
     client_instance = TestClient(fastapi_app)
-    client_instance.application = ApplicationMock()
-
     yield client_instance
     fastapi_app.dependency_overrides.clear()

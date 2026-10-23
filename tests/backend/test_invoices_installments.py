@@ -1,65 +1,63 @@
 import pytest
 from datetime import date
-from models import db, Partner, Product, DeliveryNote, Invoice, InvoiceItem, InvoiceInstallment
+from models import Partner, Product, DeliveryNote, Invoice, InvoiceItem, InvoiceInstallment
 
-def test_invoice_and_installment_models(client):
-    with client.application.app_context():
-        p = Partner(ragione_sociale="Cliente Fattura Test", tipo="cliente")
-        prod = Product(codice="ART-TEST", descrizione="Articolo Test", categoria="fresco", prezzo_vendita=10.0)
-        db.session.add_all([p, prod])
-        db.session.commit()
+def test_invoice_and_installment_models(client, db_session):
+    p = Partner(ragione_sociale="Cliente Fattura Test", tipo="cliente")
+    prod = Product(codice="ART-TEST", descrizione="Articolo Test", categoria="fresco", prezzo_vendita=10.0)
+    db_session.add_all([p, prod])
+    db_session.commit()
 
-        inv = Invoice(
-            numero=1,
-            anno=2026,
-            numero_completo="FT-2026-0001",
-            tipo_documento="TD24",
-            data_documento=date.today(),
-            cliente_id=p.id,
-            totale_imponibile=100.0,
-            totale_imposta=4.0,
-            totale_fattura=104.0,
-            stato="emessa"
-        )
-        db.session.add(inv)
-        db.session.commit()
+    inv = Invoice(
+        numero=1,
+        anno=2026,
+        numero_completo="FT-2026-0001",
+        tipo_documento="TD24",
+        data_documento=date.today(),
+        cliente_id=p.id,
+        totale_imponibile=100.0,
+        totale_imposta=4.0,
+        totale_fattura=104.0,
+        stato="emessa"
+    )
+    db_session.add(inv)
+    db_session.commit()
 
-        item = InvoiceItem(
-            invoice_id=inv.id,
-            product_id=prod.id,
-            descrizione=prod.descrizione,
-            colli=1,
-            quantita=10.0,
-            prezzo_unitario=10.0,
-            imponibile_riga=100.0,
-            aliquota_iva=4
-        )
-        inst = InvoiceInstallment(
-            invoice_id=inv.id,
-            numero_rata=1,
-            totale_rate=1,
-            data_scadenza=date.today(),
-            importo=104.0,
-            stato="aperta"
-        )
-        db.session.add_all([item, inst])
-        db.session.commit()
+    item = InvoiceItem(
+        invoice_id=inv.id,
+        product_id=prod.id,
+        descrizione=prod.descrizione,
+        colli=1,
+        quantita=10.0,
+        prezzo_unitario=10.0,
+        imponibile_riga=100.0,
+        aliquota_iva=4
+    )
+    inst = InvoiceInstallment(
+        invoice_id=inv.id,
+        numero_rata=1,
+        totale_rate=1,
+        data_scadenza=date.today(),
+        importo=104.0,
+        stato="aperta"
+    )
+    db_session.add_all([item, inst])
+    db_session.commit()
 
-        assert inv.id is not None
-        assert len(inv.items) == 1
-        assert len(inv.installments) == 1
-        assert inv.numero_completo == "FT-2026-0001"
+    assert inv.id is not None
+    assert len(inv.items) == 1
+    assert len(inv.installments) == 1
+    assert inv.numero_completo == "FT-2026-0001"
 
-def test_unbilled_delivery_notes(client):
+def test_unbilled_delivery_notes(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Cliente Unbilled Test", tipo="cliente")
-        prod = Product(codice="ART-UB", descrizione="Articolo Unbilled", prezzo_vendita=5.0)
-        db.session.add_all([customer, prod])
-        db.session.commit()
-        c_id, p_id = customer.id, prod.id
+    customer = Partner(ragione_sociale="Cliente Unbilled Test", tipo="cliente")
+    prod = Product(codice="ART-UB", descrizione="Articolo Unbilled", prezzo_vendita=5.0)
+    db_session.add_all([customer, prod])
+    db_session.commit()
+    c_id, p_id = customer.id, prod.id
 
     # Create DDT in bozza
     ddt_res = client.post('/api/delivery-notes', json={
@@ -78,17 +76,16 @@ def test_unbilled_delivery_notes(client):
     ub_res2 = client.get(f'/api/delivery-notes/unbilled?cliente_id={c_id}', headers=admin_headers)
     assert any(d['id'] == ddt_id for d in ub_res2.get_json())
 
-def test_invoice_differita_from_ddt(client):
+def test_invoice_differita_from_ddt(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Bio Supermarket Differita", tipo="cliente", condizioni_pagamento="30/60gg fm")
-        prod1 = Product(codice="ART-BIO-1", descrizione="Uva Bio", categoria="fresco", aliquota_iva=4, prezzo_vendita=2.0)
-        prod2 = Product(codice="IMB-EPAL-1", descrizione="Pallet EPAL", categoria="imballo", aliquota_iva=22, prezzo_vendita=10.0)
-        db.session.add_all([customer, prod1, prod2])
-        db.session.commit()
-        c_id, p1_id, p2_id = customer.id, prod1.id, prod2.id
+    customer = Partner(ragione_sociale="Bio Supermarket Differita", tipo="cliente", condizioni_pagamento="30/60gg fm")
+    prod1 = Product(codice="ART-BIO-1", descrizione="Uva Bio", categoria="fresco", aliquota_iva=4, prezzo_vendita=2.0)
+    prod2 = Product(codice="IMB-EPAL-1", descrizione="Pallet EPAL", categoria="imballo", aliquota_iva=22, prezzo_vendita=10.0)
+    db_session.add_all([customer, prod1, prod2])
+    db_session.commit()
+    c_id, p1_id, p2_id = customer.id, prod1.id, prod2.id
 
     # Create and confirm DDT
     ddt_res = client.post('/api/delivery-notes', json={
@@ -132,21 +129,19 @@ def test_invoice_differita_from_ddt(client):
     assert round(sum(r['importo'] for r in rate), 2) == 232.4
 
     # Check DDT transitioned to 'fatturato'
-    with client.application.app_context():
-        from models import DeliveryNote
-        ddt_db = db.session.get(DeliveryNote, ddt_id)
-        assert ddt_db.stato == "fatturato"
+    from models import DeliveryNote
+    ddt_db = db_session.get(DeliveryNote, ddt_id)
+    assert ddt_db.stato == "fatturato"
 
-def test_installments_quadratura_odd_amount(client):
+def test_installments_quadratura_odd_amount(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Cliente Rata Dispari", tipo="cliente", condizioni_pagamento="30/60gg fm")
-        prod = Product(codice="ART-DISP", descrizione="Articolo Dispari", aliquota_iva=10, prezzo_vendita=90.95)
-        db.session.add_all([customer, prod])
-        db.session.commit()
-        c_id, p_id = customer.id, prod.id
+    customer = Partner(ragione_sociale="Cliente Rata Dispari", tipo="cliente", condizioni_pagamento="30/60gg fm")
+    prod = Product(codice="ART-DISP", descrizione="Articolo Dispari", aliquota_iva=10, prezzo_vendita=90.95)
+    db_session.add_all([customer, prod])
+    db_session.commit()
+    c_id, p_id = customer.id, prod.id
 
     # Direct invoice with odd total: 90.95 + 10% IVA (9.10) = 100.05
     payload = {
@@ -163,16 +158,15 @@ def test_installments_quadratura_odd_amount(client):
     assert len(rate) == 2
     assert round(sum(r['importo'] for r in rate), 2) == 100.05
 
-def test_pay_installment_and_auto_close_invoice(client):
+def test_pay_installment_and_auto_close_invoice(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Cliente Pay Test", tipo="cliente", condizioni_pagamento="bonifico a vista")
-        prod = Product(codice="ART-PAY", descrizione="Articolo Pay", prezzo_vendita=50.0, aliquota_iva=0)
-        db.session.add_all([customer, prod])
-        db.session.commit()
-        c_id, p_id = customer.id, prod.id
+    customer = Partner(ragione_sociale="Cliente Pay Test", tipo="cliente", condizioni_pagamento="bonifico a vista")
+    prod = Product(codice="ART-PAY", descrizione="Articolo Pay", prezzo_vendita=50.0, aliquota_iva=0)
+    db_session.add_all([customer, prod])
+    db_session.commit()
+    c_id, p_id = customer.id, prod.id
 
     res = client.post('/api/invoices', json={
         "cliente_id": c_id,

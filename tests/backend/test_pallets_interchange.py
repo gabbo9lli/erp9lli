@@ -1,55 +1,53 @@
 import pytest
 from datetime import date, timedelta
-from models import db, Partner, PalletType, PalletReceipt, PalletReceiptItem
+from models import Partner, PalletType, PalletReceipt, PalletReceiptItem
 
-def test_pallet_models_persistence(client):
-    with client.application.app_context():
-        partner = Partner(ragione_sociale="Cliente Pallet Test", tipo="cliente")
-        ptype = PalletType(codice="EPAL", descrizione="Pallet EUR/EPAL Legno Standard", valore_risarcimento=18.0)
-        db.session.add_all([partner, ptype])
-        db.session.commit()
+def test_pallet_models_persistence(client, db_session):
+    partner = Partner(ragione_sociale="Cliente Pallet Test", tipo="cliente")
+    ptype = PalletType(codice="EPAL", descrizione="Pallet EUR/EPAL Legno Standard", valore_risarcimento=18.0)
+    db_session.add_all([partner, ptype])
+    db_session.commit()
 
-        receipt = PalletReceipt(
-            numero=1,
-            anno=2026,
-            numero_completo="BP-2026-0001",
-            data_emissione=date.today(),
-            data_limite_restituzione=date.today() + timedelta(days=60),
-            partner_id=partner.id,
-            tipo="uscita",
-            totale_consegnati=15,
-            totale_restituiti=0,
-            saldo_netto=15,
-            stato="aperto"
-        )
-        db.session.add(receipt)
-        db.session.commit()
+    receipt = PalletReceipt(
+        numero=1,
+        anno=2026,
+        numero_completo="BP-2026-0001",
+        data_emissione=date.today(),
+        data_limite_restituzione=date.today() + timedelta(days=60),
+        partner_id=partner.id,
+        tipo="uscita",
+        totale_consegnati=15,
+        totale_restituiti=0,
+        saldo_netto=15,
+        stato="aperto"
+    )
+    db_session.add(receipt)
+    db_session.commit()
 
-        item = PalletReceiptItem(
-            pallet_receipt_id=receipt.id,
-            pallet_type_id=ptype.id,
-            quantita_consegnata=15,
-            quantita_restituita=0,
-            saldo_riga=15
-        )
-        db.session.add(item)
-        db.session.commit()
+    item = PalletReceiptItem(
+        pallet_receipt_id=receipt.id,
+        pallet_type_id=ptype.id,
+        quantita_consegnata=15,
+        quantita_restituita=0,
+        saldo_riga=15
+    )
+    db_session.add(item)
+    db_session.commit()
 
-        assert receipt.id is not None
-        assert len(receipt.items) == 1
-        assert receipt.saldo_netto == 15
-        assert receipt.numero_completo == "BP-2026-0001"
+    assert receipt.id is not None
+    assert len(receipt.items) == 1
+    assert receipt.saldo_netto == 15
+    assert receipt.numero_completo == "BP-2026-0001"
 
-def test_create_pallet_receipt_sequential_and_term(client):
+def test_create_pallet_receipt_sequential_and_term(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Supermercati Bio Pallet", tipo="cliente")
-        ptype = PalletType(codice="EPAL", descrizione="EUR/EPAL Standard", valore_risarcimento=18.0)
-        db.session.add_all([customer, ptype])
-        db.session.commit()
-        c_id, pt_id = customer.id, ptype.id
+    customer = Partner(ragione_sociale="Supermercati Bio Pallet", tipo="cliente")
+    ptype = PalletType(codice="EPAL", descrizione="EUR/EPAL Standard", valore_risarcimento=18.0)
+    db_session.add_all([customer, ptype])
+    db_session.commit()
+    c_id, pt_id = customer.id, ptype.id
 
     payload = {
         "partner_id": c_id,
@@ -70,16 +68,15 @@ def test_create_pallet_receipt_sequential_and_term(client):
     expected_term = (date.today() + timedelta(days=60)).isoformat()
     assert data['data_limite_restituzione'] == expected_term
 
-def test_pallet_receipt_return_and_settlement(client):
+def test_pallet_receipt_return_and_settlement(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        vettore = Partner(ragione_sociale="Trasporti Rapidi Bio", tipo="vettore")
-        ptype = PalletType(codice="CPR_40x60", descrizione="Cassa CPR", valore_risarcimento=2.5)
-        db.session.add_all([vettore, ptype])
-        db.session.commit()
-        v_id, pt_id = vettore.id, ptype.id
+    vettore = Partner(ragione_sociale="Trasporti Rapidi Bio", tipo="vettore")
+    ptype = PalletType(codice="CPR_40x60", descrizione="Cassa CPR", valore_risarcimento=2.5)
+    db_session.add_all([vettore, ptype])
+    db_session.commit()
+    v_id, pt_id = vettore.id, ptype.id
 
     # Create receipt with 30 pallets out, 0 in -> balance 30
     res_b = client.post('/api/pallets/receipts', json={
@@ -106,16 +103,15 @@ def test_pallet_receipt_return_and_settlement(client):
     assert data2['saldo_netto'] == 0
     assert data2['stato'] == "saldato"
 
-def test_pallet_ledger_balances(client):
+def test_pallet_ledger_balances(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Supermercati Bio Pallet", tipo="cliente")
-        ptype = PalletType(codice="EPAL", descrizione="EUR/EPAL Standard", valore_risarcimento=18.0)
-        db.session.add_all([customer, ptype])
-        db.session.commit()
-        c_id, pt_id = customer.id, ptype.id
+    customer = Partner(ragione_sociale="Supermercati Bio Pallet", tipo="cliente")
+    ptype = PalletType(codice="EPAL", descrizione="EUR/EPAL Standard", valore_risarcimento=18.0)
+    db_session.add_all([customer, ptype])
+    db_session.commit()
+    c_id, pt_id = customer.id, ptype.id
 
     client.post('/api/pallets/receipts', json={
         "partner_id": c_id,
@@ -130,16 +126,15 @@ def test_pallet_ledger_balances(client):
     assert customer_ledger is not None
     assert customer_ledger['saldi']['EPAL'] == 15
 
-def test_invoice_unreturned_pallets_reverse_charge(client):
+def test_invoice_unreturned_pallets_reverse_charge(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
     client.get('/api/me', headers=admin_headers)
 
-    with client.application.app_context():
-        customer = Partner(ragione_sociale="Cliente Inadempiente Pallet", tipo="cliente")
-        ptype = PalletType(codice="EPAL", descrizione="EUR/EPAL Standard", valore_risarcimento=18.0)
-        db.session.add_all([customer, ptype])
-        db.session.commit()
-        c_id, pt_id = customer.id, ptype.id
+    customer = Partner(ragione_sociale="Cliente Inadempiente Pallet", tipo="cliente")
+    ptype = PalletType(codice="EPAL", descrizione="EUR/EPAL Standard", valore_risarcimento=18.0)
+    db_session.add_all([customer, ptype])
+    db_session.commit()
+    c_id, pt_id = customer.id, ptype.id
 
     # Create unreturned receipt: 10 EPAL at 18€ = 180€
     res_b = client.post('/api/pallets/receipts', json={
