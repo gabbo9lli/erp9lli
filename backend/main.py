@@ -1,8 +1,9 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine
 from models import Base
+from api.websocket_manager import manager
 from api.routers import (
     auth, system, partners, products, ecommerce,
     orders, delivery_notes, warehouse, invoices,
@@ -43,6 +44,17 @@ app.include_router(cmr.router)
 app.include_router(pos.router)
 app.include_router(labels.router)
 app.include_router(events.router)
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 if __name__ == "__main__":
     import uvicorn
