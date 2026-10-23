@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from main import app as fastapi_app
 from database import get_db
-from models import Base
+from models import Base, db as models_db
 
 # Monkey patch httpx Response per offrire get_json() come Flask Response
 httpx.Response.get_json = lambda self: self.json()
@@ -31,21 +31,33 @@ test_engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
+_current_test_session = None
+
 # Collega property .query a Base per compatibilità retroattiva nei test
 class CurrentQueryProperty:
     def __get__(self, instance, owner):
-        # Usa una sessione aperta o crea temporanea
-        return Query(owner, session=TestingSessionLocal())
+        session = _current_test_session or TestingSessionLocal()
+        return Query(owner, session=session)
 
 Base.query = CurrentQueryProperty()
+
+# Collega property .session allo shim per retrocompatibilità con db.session
+class SessionCompatProperty:
+    def __get__(self, instance, owner):
+        return _current_test_session or TestingSessionLocal()
+
+type(models_db).session = SessionCompatProperty()
 
 @pytest.fixture(scope="function")
 def db_session():
     Base.metadata.create_all(bind=test_engine)
     session = TestingSessionLocal()
+    global _current_test_session
+    _current_test_session = session
     try:
         yield session
     finally:
+        _current_test_session = None
         session.close()
         Base.metadata.drop_all(bind=test_engine)
 

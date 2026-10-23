@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine
 from models import Base
-from api.routers import auth, system
+from api.routers import auth, system, partners, products
 
 # Crea tabelle se non esistono (in dev/sqlite)
 Base.metadata.create_all(bind=engine)
@@ -26,6 +26,8 @@ app.add_middleware(
 # Registra routers
 app.include_router(auth.router)
 app.include_router(system.router)
+app.include_router(partners.router)
+app.include_router(products.router)
 
 if __name__ == "__main__":
     import uvicorn
