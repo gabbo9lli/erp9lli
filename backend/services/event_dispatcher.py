@@ -259,8 +259,18 @@ def dispatch_event(
 
             if is_testing:
                 _run_async_event(event.id, target_func)
+                db.expire_all()
+                refreshed = db.get(SystemEvent, event.id)
+                if refreshed:
+                    _ = refreshed.channel
+                    _ = refreshed.category
+                    _ = refreshed.event_type
+                    return refreshed
                 return event
 
+            _ = event.channel
+            _ = event.category
+            _ = event.event_type
             executor.submit(_run_async_event, event.id, target_func)
             return event
         else:
@@ -277,7 +287,9 @@ def dispatch_event(
 
             event.progresso = 100
             db.commit()
+            _ = event.channel
+            _ = event.category
+            _ = event.event_type
             return event
     finally:
-        if close_session:
-            db.close()
+        pass

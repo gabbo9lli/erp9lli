@@ -32,9 +32,9 @@ class SystemEvent(Base):
     data_completamento = Column(DateTime, nullable=True)
     note_esito = Column(Text, nullable=True)
 
-    channel = relationship('EventChannel', backref='events')
-    category = relationship('EventCategory', backref='events')
-    event_type = relationship('EventType', backref='events')
+    channel = relationship('EventChannel', backref='events', lazy='joined')
+    category = relationship('EventCategory', backref='events', lazy='joined')
+    event_type = relationship('EventType', backref='events', lazy='joined')
     user = relationship('User', backref='events')
     partner = relationship('Partner', backref='events')
 

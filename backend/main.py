@@ -3,7 +3,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine
 from models import Base
-from api.routers import auth, system, partners, products
+from api.routers import (
+    auth, system, partners, products, ecommerce,
+    orders, delivery_notes, warehouse, invoices,
+    accounting, pallets, cmr, pos, labels, events
+)
 
 # Crea tabelle se non esistono (in dev/sqlite)
 Base.metadata.create_all(bind=engine)
@@ -28,6 +32,17 @@ app.include_router(auth.router)
 app.include_router(system.router)
 app.include_router(partners.router)
 app.include_router(products.router)
+app.include_router(ecommerce.router)
+app.include_router(orders.router)
+app.include_router(delivery_notes.router)
+app.include_router(warehouse.router)
+app.include_router(invoices.router)
+app.include_router(accounting.router)
+app.include_router(pallets.router)
+app.include_router(cmr.router)
+app.include_router(pos.router)
+app.include_router(labels.router)
+app.include_router(events.router)
 
 if __name__ == "__main__":
     import uvicorn
