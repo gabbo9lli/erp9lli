@@ -10,6 +10,7 @@ from database import get_db
 from models import Account, JournalEntry, JournalItem, AccountingCausal, Partner, User
 from api.deps import require_auth
 from seed_accounting import seed_default_accounting_causals, seed_chart_of_accounts
+from schemas.accounting import AccountResponse, AccountingCausalResponse, JournalEntryResponse
 
 router = APIRouter(prefix="/api/accounting", tags=["Accounting"])
 
@@ -17,16 +18,16 @@ def get_next_journal_entry_number(anno: int, db: Session) -> int:
     max_num = db.query(func.max(JournalEntry.numero)).filter_by(anno=anno).scalar()
     return (max_num or 0) + 1
 
-@router.get("/accounts")
+@router.get("/accounts", response_model=List[AccountResponse])
 def get_accounts(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)
 ):
     seed_chart_of_accounts(db)
     accounts = db.query(Account).order_by(Account.codice.asc()).all()
-    return [a.to_dict() for a in accounts]
+    return accounts
 
-@router.post("/accounts", status_code=status.HTTP_201_CREATED)
+@router.post("/accounts", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
 async def create_account(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -37,25 +38,25 @@ async def create_account(
     nome = data.get('nome')
     tipo = data.get('tipo')
     if not codice or not nome or not tipo:
-        return JSONResponse(status_code=400, content={"error": "codice, nome e tipo sono obbligatori"})
+        raise HTTPException(status_code=400, detail="codice, nome e tipo sono obbligatori")
     if db.query(Account).filter_by(codice=codice).first():
-        return JSONResponse(status_code=400, content={"error": f"Conto con codice {codice} già esistente"})
+        raise HTTPException(status_code=400, detail=f"Conto con codice {codice} già esistente")
     acc = Account(codice=codice, nome=nome, tipo=tipo, attivo=data.get('attivo', True))
     db.add(acc)
     db.commit()
     db.refresh(acc)
-    return JSONResponse(status_code=201, content=acc.to_dict())
+    return acc
 
-@router.get("/causals")
+@router.get("/causals", response_model=List[AccountingCausalResponse])
 def get_accounting_causals(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)
 ):
     seed_default_accounting_causals(db)
     causals = db.query(AccountingCausal).order_by(AccountingCausal.codice.asc()).all()
-    return [c.to_dict() for c in causals]
+    return causals
 
-@router.post("/causals", status_code=status.HTTP_201_CREATED)
+@router.post("/causals", response_model=AccountingCausalResponse, status_code=status.HTTP_201_CREATED)
 async def create_accounting_causal(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -65,9 +66,9 @@ async def create_accounting_causal(
     codice = (data.get('codice') or '').strip().upper()
     descrizione = (data.get('descrizione') or '').strip()
     if not codice or not descrizione:
-        return JSONResponse(status_code=400, content={"error": "codice e descrizione sono obbligatori"})
+        raise HTTPException(status_code=400, detail="codice e descrizione sono obbligatori")
     if db.query(AccountingCausal).filter_by(codice=codice).first():
-        return JSONResponse(status_code=400, content={"error": f"Causale {codice} già esistente"})
+        raise HTTPException(status_code=400, detail=f"Causale {codice} già esistente")
     causal = AccountingCausal(
         codice=codice,
         descrizione=descrizione,
@@ -81,9 +82,9 @@ async def create_accounting_causal(
     db.add(causal)
     db.commit()
     db.refresh(causal)
-    return JSONResponse(status_code=201, content=causal.to_dict())
+    return causal
 
-@router.put("/causals/{cid}")
+@router.put("/causals/{cid}", response_model=AccountingCausalResponse)
 async def update_accounting_causal(
     cid: int,
     request: Request,
@@ -92,16 +93,16 @@ async def update_accounting_causal(
 ):
     causal = db.get(AccountingCausal, cid)
     if not causal:
-        return JSONResponse(status_code=404, content={"error": "Causale non trovata"})
+        raise HTTPException(status_code=404, detail="Causale non trovata")
     data = await request.json()
     for field in ['descrizione', 'tipo_registro', 'conto_dare_id', 'conto_avere_id', 'conto_iva_id', 'template_descrizione', 'attivo']:
         if field in data:
             setattr(causal, field, data[field])
     db.commit()
     db.refresh(causal)
-    return causal.to_dict()
+    return causal
 
-@router.get("/entries")
+@router.get("/entries", response_model=List[JournalEntryResponse])
 def get_journal_entries(
     anno: Optional[int] = None,
     search: Optional[str] = None,
@@ -114,9 +115,9 @@ def get_journal_entries(
     if search:
         query = query.filter(JournalEntry.causale.ilike(f"%{search}%"))
     entries = query.order_by(JournalEntry.data_registrazione.desc(), JournalEntry.numero.desc()).all()
-    return [e.to_dict() for e in entries]
+    return entries
 
-@router.get("/entries/{eid}")
+@router.get("/entries/{eid}", response_model=JournalEntryResponse)
 def get_journal_entry_detail(
     eid: int,
     current_user: User = Depends(require_auth()),
@@ -124,10 +125,10 @@ def get_journal_entry_detail(
 ):
     entry = db.get(JournalEntry, eid)
     if not entry:
-        return JSONResponse(status_code=404, content={"error": "Registrazione non trovata"})
-    return entry.to_dict()
+        raise HTTPException(status_code=404, detail="Registrazione non trovata")
+    return entry
 
-@router.post("/entries", status_code=status.HTTP_201_CREATED)
+@router.post("/entries", response_model=JournalEntryResponse, status_code=status.HTTP_201_CREATED)
 async def create_journal_entry(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -197,10 +198,10 @@ async def create_journal_entry(
     try:
         db.commit()
         db.refresh(entry)
-        return JSONResponse(status_code=201, content=entry.to_dict())
+        return entry
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/reports/libro-giornale")
 def report_libro_giornale(

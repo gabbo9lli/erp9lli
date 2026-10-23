@@ -15,6 +15,7 @@ from api.deps import require_auth
 from services.sdi_service import generate_sdi_xml, validate_sdi_invoice
 from services.event_dispatcher import dispatch_event
 from seed_accounting import seed_default_accounting_causals
+from schemas.invoice import InvoiceResponse, InvoiceInstallmentResponse
 
 router = APIRouter(prefix="/api", tags=["Invoices & SDI"])
 
@@ -134,7 +135,7 @@ def auto_post_invoice_to_accounting(inv: Invoice, db: Session):
     ))
     return je
 
-@router.get("/invoices")
+@router.get("/invoices", response_model=List[InvoiceResponse])
 def get_invoices(
     stato: Optional[str] = None,
     tipo: Optional[str] = None,
@@ -160,9 +161,9 @@ def get_invoices(
             (Partner.ragione_sociale.ilike(search_filter))
         )
     invoices = query.order_by(Invoice.data_documento.desc(), Invoice.numero.desc()).all()
-    return [inv.to_dict() for inv in invoices]
+    return invoices
 
-@router.get("/invoices/{iid}")
+@router.get("/invoices/{iid}", response_model=InvoiceResponse)
 def get_invoice_detail(
     iid: int,
     current_user: User = Depends(require_auth()),
@@ -170,10 +171,10 @@ def get_invoice_detail(
 ):
     invoice = db.get(Invoice, iid)
     if not invoice:
-        return JSONResponse(status_code=404, content={"error": "Invoice not found"})
-    return invoice.to_dict()
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return invoice
 
-@router.post("/invoices/from-ddt", status_code=status.HTTP_201_CREATED)
+@router.post("/invoices/from-ddt", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_invoice_from_ddt(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -297,12 +298,12 @@ async def create_invoice_from_ddt(
     try:
         db.commit()
         db.refresh(invoice)
-        return JSONResponse(status_code=201, content=invoice.to_dict())
+        return invoice
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/invoices", status_code=status.HTTP_201_CREATED)
+@router.post("/invoices", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_invoice_direct(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -422,12 +423,12 @@ async def create_invoice_direct(
     try:
         db.commit()
         db.refresh(invoice)
-        return JSONResponse(status_code=201, content=invoice.to_dict())
+        return invoice
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/invoices/{iid}/credit-note", status_code=status.HTTP_201_CREATED)
+@router.post("/invoices/{iid}/credit-note", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_credit_note_from_invoice(
     iid: int,
     request: Request,
@@ -633,10 +634,10 @@ async def create_credit_note_from_invoice(
     try:
         db.commit()
         db.refresh(nc)
-        return JSONResponse(status_code=201, content=nc.to_dict())
+        return nc
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/invoices/{iid}/sdi-validate")
 def validate_sdi_invoice_endpoint(
@@ -646,7 +647,7 @@ def validate_sdi_invoice_endpoint(
 ):
     invoice = db.get(Invoice, iid)
     if not invoice:
-        return JSONResponse(status_code=404, content={"error": "Invoice not found"})
+        raise HTTPException(status_code=404, detail="Invoice not found")
     res = validate_sdi_invoice(invoice)
     return res
 
@@ -658,7 +659,7 @@ def download_sdi_xml_endpoint(
 ):
     invoice = db.get(Invoice, iid)
     if not invoice:
-        return JSONResponse(status_code=404, content={"error": "Invoice not found"})
+        raise HTTPException(status_code=404, detail="Invoice not found")
     try:
         xml_content, filename = generate_sdi_xml(invoice, db=db)
         return Response(
@@ -667,9 +668,9 @@ def download_sdi_xml_endpoint(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
     except ValueError as e:
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/installments")
+@router.get("/installments", response_model=List[InvoiceInstallmentResponse])
 def get_installments(
     stato: Optional[str] = None,
     current_user: User = Depends(require_auth()),
@@ -679,9 +680,9 @@ def get_installments(
     if stato and stato != 'tutti':
         query = query.filter_by(stato=stato)
     installments = query.order_by(InvoiceInstallment.data_scadenza.asc()).all()
-    return [inst.to_dict() for inst in installments]
+    return installments
 
-@router.post("/installments/{inst_id}/pay")
+@router.post("/installments/{inst_id}/pay", response_model=InvoiceInstallmentResponse)
 def pay_installment(
     inst_id: int,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -689,7 +690,7 @@ def pay_installment(
 ):
     inst = db.get(InvoiceInstallment, inst_id)
     if not inst:
-        return JSONResponse(status_code=404, content={"error": "Installment not found"})
+        raise HTTPException(status_code=404, detail="Installment not found")
 
     inst.stato = 'incassata'
     inst.data_incasso = date.today()
@@ -742,6 +743,7 @@ def pay_installment(
 
     try:
         dispatch_event(
+            db=db,
             event_type_code="INCASSO_RATA",
             azione="incasso_rata",
             titolo=f"Incasso Rata FT {invoice.numero_completo}",
@@ -749,8 +751,7 @@ def pay_installment(
             entita_tipo="installment",
             entita_id=inst.id,
             partner_id=invoice.cliente_id,
-            payload_dati={"importo": float(inst.importo), "journal_entry_id": je_inc.id if je_inc else None},
-            db=db
+            payload_dati={"importo": float(inst.importo), "journal_entry_id": je_inc.id if je_inc else None}
         )
     except Exception:
         pass
@@ -758,7 +759,7 @@ def pay_installment(
     try:
         db.commit()
         db.refresh(inst)
-        return inst.to_dict()
+        return inst
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
