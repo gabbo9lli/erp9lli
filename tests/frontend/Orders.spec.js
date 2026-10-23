@@ -88,4 +88,67 @@ describe('Orders.vue', () => {
     expect(wrapper.text()).toContain('ORD-2026-0001')
     expect(wrapper.text()).toContain('EcorNaturaSì')
   })
+
+  it('renders E-Commerce orders badge and external reference', async () => {
+    const mockOrders = [
+      {
+        id: 2,
+        numero: 2,
+        anno: 2026,
+        numero_completo: 'ORD-2026-0002',
+        data_ordine: '2026-10-22',
+        cliente: { ragione_sociale: 'Mario Rossi Web' },
+        stato: 'confermato',
+        canale_vendita: 'ecommerce',
+        external_reference: 'SPREE-R999',
+        totale_imponibile: 150.0,
+        items: []
+      }
+    ]
+
+    vi.spyOn(axios, 'get').mockImplementation((url) => {
+      if (url.includes('/api/orders')) {
+        return Promise.resolve({ data: mockOrders })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    const wrapper = mount(Orders, {
+      global: {
+        stubs: {
+          'q-table': {
+            props: ['rows'],
+            template: `
+              <div class="q-table-stub">
+                <div v-for="row in rows" :key="row.id" class="row-stub">
+                  <span>{{ row.numero_completo }}</span>
+                  <span v-if="row.canale_vendita === 'ecommerce'">ECOMMERCE #{{ row.external_reference }}</span>
+                  <span>{{ row.cliente ? row.cliente.ragione_sociale : '' }}</span>
+                </div>
+              </div>
+            `
+          },
+          'q-btn': true,
+          'q-btn-toggle': true,
+          'q-input': true,
+          'q-icon': true,
+          'q-dialog': true,
+          'q-card': true,
+          'q-card-section': true,
+          'q-card-actions': true,
+          'q-space': true,
+          'q-chip': true,
+          'q-badge': true,
+          'q-select': true,
+          'q-separator': true,
+          'q-linear-progress': true
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('ORD-2026-0002')
+    expect(wrapper.text()).toContain('ECOMMERCE #SPREE-R999')
+    expect(wrapper.text()).toContain('Mario Rossi Web')
+  })
 })

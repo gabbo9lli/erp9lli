@@ -13,6 +13,8 @@ class CustomerOrder(db.Model):
     stato = db.Column(db.String(20), nullable=False, default='aperto') # aperto, in_lavorazione, chiuso
     totale_imponibile = db.Column(db.Float, nullable=False, default=0.0)
     note = db.Column(db.Text, nullable=True)
+    external_reference = db.Column(db.String(100), nullable=True, index=True)
+    canale_vendita = db.Column(db.String(30), nullable=False, server_default='diretto', default='diretto') # diretto, ecommerce, bancom
 
     cliente = db.relationship('Partner', backref='ordini_cliente')
     items = db.relationship('OrderItem', backref='order', cascade='all, delete-orphan', passive_deletes=True, order_by='OrderItem.sequenza')
@@ -31,5 +33,7 @@ class CustomerOrder(db.Model):
             "stato": self.stato,
             "totale_imponibile": self.totale_imponibile,
             "note": self.note,
+            "external_reference": self.external_reference,
+            "canale_vendita": self.canale_vendita,
             "items": [it.to_dict() for it in self.items]
         }

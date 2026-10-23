@@ -8,7 +8,7 @@ from flask_cors import CORS # Needed for the frontend to talk to the backend
 import os
 import io
 import csv
-from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem, EventChannel, EventCategory, EventType, SystemEvent, PosStation, PosSale, PosSaleItem, AccountingCausal
+from models import db, User, Partner, Product, DeliveryNote, DeliveryNoteItem, Invoice, InvoiceItem, InvoiceInstallment, Account, JournalEntry, JournalItem, CustomerOrder, OrderItem, PurchaseDeliveryNote, PurchaseDeliveryNoteItem, PalletType, PalletReceipt, PalletReceiptItem, CmrDocument, CmrItem, EventChannel, EventCategory, EventType, SystemEvent, PosStation, PosSale, PosSaleItem, AccountingCausal, EcommerceSyncLog
 from sqlalchemy import text
 from sqlalchemy import inspect, func
 from datetime import datetime, date, timedelta
@@ -20,6 +20,7 @@ from services.sdi_service import generate_sdi_xml, validate_sdi_invoice
 from services.event_dispatcher import dispatch_event, seed_default_channels_and_categories, get_redis_connection
 from services.pos_driver_service import PosDriverService
 from services.barcode_label_service import BarcodeLabelService
+from services.ecommerce_service import EcommerceService
 from seed_accounting import seed_default_accounting_causals
 
 app = Flask(__name__)
@@ -109,7 +110,7 @@ def get_me():
 # ==========================================
 # GESTIONE MODULI & FEATURE FLAGS
 # ==========================================
-AVAILABLE_MODULES = ["anagrafiche", "orders", "delivery_notes", "invoicing", "accounting", "warehouse", "pallets", "cmr", "pos"]
+AVAILABLE_MODULES = ["anagrafiche", "orders", "delivery_notes", "invoicing", "accounting", "warehouse", "pallets", "cmr", "pos", "ecommerce"]
 
 def is_module_enabled(module_name):
     enabled = os.getenv('ENABLED_MODULES', 'all').strip().lower()
@@ -3569,6 +3570,39 @@ def get_purchase_labels(pid):
         "count": len(labels),
         "labels": labels
     }), 200
+
+# ==========================================
+# MODULO CONNETTORE E-COMMERCE (SPREE COMMERCE)
+# ==========================================
+
+@app.route('/api/ecommerce/webhook/orders', methods=['POST'])
+def handle_ecommerce_order_webhook():
+    expected_secret = os.getenv("ECOMMERCE_WEBHOOK_SECRET", "spree-secret-token")
+    provided_secret = request.headers.get("X-Ecommerce-Secret")
+    auth_email = request.headers.get("X-Forwarded-Email")
+
+    if not auth_email and provided_secret != expected_secret:
+        return jsonify({"error": "Non autorizzato: token webhook e-commerce non valido"}), 401
+
+    payload = request.get_json() or {}
+    try:
+        order, is_new = EcommerceService.process_incoming_order(payload)
+        status_code = 201 if is_new else 200
+        return jsonify(order.to_dict()), status_code
+    except Exception as e:
+        return jsonify({"error": f"Errore importazione ordine: {str(e)}"}), 400
+
+@app.route('/api/ecommerce/sync/stock', methods=['GET'])
+@require_auth()
+def get_ecommerce_stock_feed():
+    feed = EcommerceService.get_stock_sync_feed()
+    return jsonify(feed), 200
+
+@app.route('/api/ecommerce/logs', methods=['GET'])
+@require_auth()
+def get_ecommerce_sync_logs():
+    logs = EcommerceSyncLog.query.order_by(EcommerceSyncLog.id.desc()).limit(100).all()
+    return jsonify([l.to_dict() for l in logs]), 200
 
 @socketio.on('connect')
 def handle_connect():

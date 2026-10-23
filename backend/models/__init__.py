@@ -27,6 +27,7 @@ from .accounting_causal import AccountingCausal
 from .pos_station import PosStation
 from .pos_sale import PosSale
 from .pos_sale_item import PosSaleItem
+from .ecommerce_sync_log import EcommerceSyncLog
 
 __all__ = [
     "db",
@@ -58,4 +59,5 @@ __all__ = [
     "PosStation",
     "PosSale",
     "PosSaleItem",
+    "EcommerceSyncLog",
 ]

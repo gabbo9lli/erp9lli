@@ -5,7 +5,14 @@
         <h2 class="text-h5 text-weight-bold q-my-none">Gestione Ordini Clienti</h2>
         <div class="text-caption text-grey-7">Presa in carico ordini a sequenze (passi di 5) ed evasione in DDT (ReteBio standard)</div>
       </div>
-      <div>
+      <div class="row items-center q-gutter-sm">
+        <q-btn 
+          outline
+          color="teal" 
+          icon="sync_alt" 
+          label="Log E-Commerce" 
+          @click="openSyncLogsDialog"
+        />
         <q-btn 
           color="primary" 
           icon="add_shopping_cart" 
@@ -54,7 +61,12 @@
     >
       <template v-slot:body-cell-numero_completo="props">
         <q-td :props="props">
-          <span class="text-weight-bold text-primary">{{ props.row.numero_completo }}</span>
+          <div class="row items-center q-gutter-xs">
+            <span class="text-weight-bold text-primary">{{ props.row.numero_completo }}</span>
+            <q-badge v-if="props.row.canale_vendita === 'ecommerce'" color="positive" class="q-ml-xs">
+              ECOMMERCE #{{ props.row.external_reference }}
+            </q-badge>
+          </div>
         </q-td>
       </template>
 
@@ -283,6 +295,31 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- DIALOG LOG E-COMMERCE -->
+    <q-dialog v-model="syncLogsDialogOpen" full-width>
+      <q-card style="max-width: 900px; margin: auto;">
+        <q-card-section class="row items-center justify-between bg-teal text-white">
+          <div class="text-h6 text-weight-bold">Sincronizzazione E-Commerce & Log Webhook</div>
+          <q-btn icon="close" flat round dense v-close-popup />
+        </q-card-section>
+
+        <q-card-section class="q-pa-md">
+          <div class="row justify-between items-center q-mb-md">
+            <div class="text-subtitle2">Storico Webhook Ricevuti</div>
+            <q-btn outline color="teal" icon="download" label="Esporta Feed Giacenze (JSON)" @click="downloadStockFeed" />
+          </div>
+          <q-table
+            :rows="syncLogs"
+            :columns="syncLogColumns"
+            row-key="id"
+            flat
+            bordered
+            dense
+          />
+        </q-card-section>
+      </q-card>
+    </q-dialog>
   </div>
 </template>
 
@@ -306,6 +343,42 @@ const fulfillItems = ref([])
 
 const statusFilter = ref('tutti')
 const searchTerm = ref('')
+
+const syncLogsDialogOpen = ref(false)
+const syncLogs = ref([])
+
+const syncLogColumns = [
+  { name: 'timestamp', label: 'Data / Ora', field: 'timestamp', align: 'left', sortable: true },
+  { name: 'tipo_operazione', label: 'Operazione', field: 'tipo_operazione', align: 'center' },
+  { name: 'external_order_id', label: 'ID Ordine Web', field: 'external_order_id', align: 'left' },
+  { name: 'stato', label: 'Esito', field: 'stato', align: 'center' },
+  { name: 'dettaglio_risposta', label: 'Dettaglio', field: 'dettaglio_risposta', align: 'left' }
+]
+
+const openSyncLogsDialog = async () => {
+  try {
+    const res = await axios.get('/api/ecommerce/logs')
+    syncLogs.value = res.data
+    syncLogsDialogOpen.value = true
+  } catch (err) {
+    console.error('Errore recupero log:', err)
+  }
+}
+
+const downloadStockFeed = async () => {
+  try {
+    const res = await axios.get('/api/ecommerce/sync/stock')
+    const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `stock_feed_${new Date().toISOString().split('T')[0]}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    alert('Errore download feed giacenze: ' + err)
+  }
+}
 
 const formOrder = ref({
   cliente_id: null,
