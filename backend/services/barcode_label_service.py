@@ -1,4 +1,13 @@
 import re
+import html
+
+def safe_float(val, default=0.0):
+    try:
+        if val is None or val == "":
+            return default
+        return float(val)
+    except (ValueError, TypeError):
+        return default
 
 # Tabella dei pattern per Code 128 (valori da 0 a 106)
 # Ciascun pattern definisce le 6 larghezze modulari alternate (barra, spazio, barra, spazio, barra, spazio)
@@ -24,7 +33,7 @@ CODE128_PATTERNS = [
     (2, 1, 4, 1, 2, 1), (4, 1, 2, 1, 2, 1), (1, 1, 1, 1, 4, 3), (1, 1, 1, 3, 4, 1), (1, 3, 1, 1, 4, 1),
     (1, 1, 4, 1, 1, 3), (1, 1, 4, 3, 1, 1), (4, 1, 1, 1, 1, 3), (4, 1, 1, 3, 1, 1), (1, 1, 3, 1, 4, 1),
     (1, 1, 4, 1, 3, 1), (3, 1, 1, 1, 4, 1), (4, 1, 1, 1, 3, 1), (2, 1, 1, 4, 1, 2), (2, 1, 1, 2, 1, 4),
-    (2, 1, 1, 2, 3, 2), # 105: Start B
+    (2, 1, 1, 2, 3, 2), # 104: Start B
     (2, 3, 3, 1, 1, 1, 2) # 106: Stop (7 larghezze)
 ]
 
@@ -75,12 +84,13 @@ class BarcodeLabelService:
         total_height = height + 18
 
         svg_content = "\n  ".join(rects)
+        escaped_code = html.escape(code)
         svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {total_width} {total_height}" width="{total_width}" height="{total_height}">
   <style>
     .barcode-text {{ font-family: monospace; font-size: 13px; font-weight: bold; fill: #000; text-anchor: middle; }}
   </style>
   {svg_content}
-  <text x="{total_width / 2:.1f}" y="{height + 14}" class="barcode-text">{code}</text>
+  <text x="{total_width / 2:.1f}" y="{height + 14}" class="barcode-text">{escaped_code}</text>
 </svg>"""
         return svg
 
@@ -95,14 +105,15 @@ class BarcodeLabelService:
         scad = data.get("data_scadenza") or "N.D."
         origine = (data.get("origine") or "ITALIA").upper()
         ente = (data.get("ente_certificatore") or "IT-BIO-009 CCPB").upper()
-        colli = data.get("colli") or 0
-        p_netto = float(data.get("peso_netto") or 0.0)
-        p_lordo = float(data.get("peso_lordo") or (p_netto + 25.0))
-        tara = float(data.get("tara") or 25.0)
+        colli = int(safe_float(data.get("colli"), 0))
+        p_netto = safe_float(data.get("peso_netto"), 0.0)
+        p_lordo = safe_float(data.get("peso_lordo"), p_netto + 25.0)
+        tara = safe_float(data.get("tara"), 25.0)
 
         barcode_val = f"{codice}-{lotto}".replace(" ", "")
 
         zpl = f"""^XA
+^CI28
 ^PW800
 ^LL1200
 ^FO40,40^A0N,40,40^FDRETEBIO SOCIETA' AGRICOLA^FS
@@ -135,11 +146,12 @@ class BarcodeLabelService:
         codice = (data.get("codice_articolo") or "ART").upper()
         lotto = (data.get("lotto") or "LOTTO").upper()
         scad = data.get("data_scadenza") or "N.D."
-        p_netto = float(data.get("peso_netto") or 0.0)
+        p_netto = safe_float(data.get("peso_netto"), 0.0)
 
         barcode_val = f"{codice}-{lotto}".replace(" ", "")
 
         zpl = f"""^XA
+^CI28
 ^PW400
 ^LL240
 ^FO20,20^A0N,26,26^FD{desc}^FS
@@ -161,10 +173,10 @@ class BarcodeLabelService:
         scad = data.get("data_scadenza") or "N.D."
         origine = data.get("origine") or "Italia"
         ente = data.get("ente_certificatore") or "IT-BIO-009 CCPB"
-        colli = data.get("colli") or 0
-        p_netto = float(data.get("peso_netto") or 0.0)
-        p_lordo = float(data.get("peso_lordo") or (p_netto + 25.0))
-        tara = float(data.get("tara") or 25.0)
+        colli = int(safe_float(data.get("colli"), 0))
+        p_netto = safe_float(data.get("peso_netto"), 0.0)
+        p_lordo = safe_float(data.get("peso_lordo"), p_netto + 25.0)
+        tara = safe_float(data.get("tara"), 25.0)
 
         barcode_val = f"{codice}-{lotto}".replace(" ", "")
         svg = BarcodeLabelService.generate_code128_svg(barcode_val, height=60, bar_width=2)
@@ -223,7 +235,7 @@ class BarcodeLabelService:
         codice = data.get("codice_articolo") or "ART"
         lotto = data.get("lotto") or "N.D."
         scad = data.get("data_scadenza") or "N.D."
-        p_netto = float(data.get("peso_netto") or 0.0)
+        p_netto = safe_float(data.get("peso_netto"), 0.0)
 
         barcode_val = f"{codice}-{lotto}".replace(" ", "")
         svg = BarcodeLabelService.generate_code128_svg(barcode_val, height=35, bar_width=1)

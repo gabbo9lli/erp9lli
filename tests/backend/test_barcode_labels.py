@@ -147,3 +147,17 @@ def test_api_delivery_note_labels_generation(client):
         ev = SystemEvent.query.filter_by(entita_tipo="delivery_note", entita_id=ddt_id).first()
         assert ev is not None
         assert ev.azione == "stampa_etichette_barcode"
+
+def test_barcode_label_utf8_and_escaping():
+    data = {
+        "descrizione": "Pere Qualità Extra & Bio <1>",
+        "codice_articolo": "BIO&PERA",
+        "lotto": "L-2026/01",
+        "peso_netto": "invalid_number"
+    }
+    zpl = BarcodeLabelService.generate_pallet_zpl(data)
+    assert "^CI28" in zpl
+    assert "Pere Qualità Extra & Bio <1>" in zpl
+
+    svg = BarcodeLabelService.generate_code128_svg("BIO&PERA<1>")
+    assert "BIO&amp;PERA&lt;1&gt;" in svg
