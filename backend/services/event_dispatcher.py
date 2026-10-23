@@ -101,6 +101,17 @@ def get_redis_connection():
         except Exception:
             return None
 
+def _broadcast_event(event: SystemEvent, action: str):
+    try:
+        from api.websocket_manager import manager
+        manager.broadcast_sync({
+            "type": "SYSTEM_EVENT",
+            "action": action,
+            "event": event.to_dict()
+        })
+    except Exception:
+        pass
+
 def _run_async_event(event_id: int, target_func=None, db: Session = None):
     close_session = False
     if db is None:
@@ -116,6 +127,7 @@ def _run_async_event(event_id: int, target_func=None, db: Session = None):
         event.data_inizio_esecuzione = datetime.utcnow()
         event.progresso = 15
         db.commit()
+        _broadcast_event(event, "progress")
 
         try:
             if target_func:
@@ -123,6 +135,7 @@ def _run_async_event(event_id: int, target_func=None, db: Session = None):
             else:
                 event.progresso = 60
                 db.commit()
+                _broadcast_event(event, "progress")
                 time.sleep(0.05)
                 event.progresso = 100
 
@@ -139,10 +152,12 @@ def _run_async_event(event_id: int, target_func=None, db: Session = None):
             event.data_completamento = datetime.utcnow()
             event.progresso = 100
             db.commit()
+            _broadcast_event(event, "completed")
         except Exception as e:
             event.stato = 'errore'
             event.note_esito = str(e)
             db.commit()
+            _broadcast_event(event, "error")
     finally:
         if close_session:
             db.close()
@@ -225,6 +240,7 @@ def dispatch_event(
     )
     db.add(event)
     db.commit()
+    _broadcast_event(event, "created")
 
     if is_async:
         is_testing = settings.is_testing
@@ -272,6 +288,7 @@ def dispatch_event(
 
         event.progresso = 100
         db.commit()
+        _broadcast_event(event, "completed")
         _ = event.channel
         _ = event.category
         _ = event.event_type

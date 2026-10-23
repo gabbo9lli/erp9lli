@@ -187,4 +187,98 @@ describe('ActivityCenter.vue', () => {
     expect(wrapper.text()).toContain('Emissione DDT')
     expect(wrapper.text()).toContain('Sollecito Pallet')
   })
+
+  it('updates events in real-time when websocket broadcast is received', async () => {
+    const mockEvents = [
+      {
+        id: 10,
+        channel_codice: 'AUDIT',
+        titolo: 'Evento Iniziale',
+        stato: 'completato',
+        progresso: 100,
+        is_async: false
+      }
+    ]
+
+    vi.spyOn(axios, 'get').mockImplementation((url) => {
+      if (url.includes('/api/events')) return Promise.resolve({ data: mockEvents })
+      return Promise.resolve({ data: [] })
+    })
+
+    const { wsService } = await import('../../frontend/src/services/websocket.js')
+
+    const wrapper = mount(ActivityCenter, {
+      global: {
+        stubs: {
+          'q-table': {
+            props: ['rows'],
+            template: `
+              <div class="q-table-stub">
+                <div v-for="row in rows" :key="row.id" class="row-stub">
+                  <span>{{ row.titolo }}</span>
+                  <span>{{ row.stato }}</span>
+                  <span>{{ row.progresso }}</span>
+                </div>
+              </div>
+            `
+          },
+          'q-btn': true,
+          'q-input': true,
+          'q-icon': true,
+          'q-dialog': true,
+          'q-card': true,
+          'q-card-section': true,
+          'q-card-actions': true,
+          'q-space': true,
+          'q-chip': true,
+          'q-badge': true,
+          'q-select': true,
+          'q-separator': true,
+          'q-linear-progress': true,
+          'q-tabs': { template: '<div><slot /></div>' },
+          'q-tab': true,
+          'q-tab-panels': { template: '<div><slot /></div>' },
+          'q-tab-panel': { template: '<div><slot /></div>' }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Evento Iniziale')
+
+    // Simulate incoming real-time websocket event
+    wsService.notifyListeners({
+      type: 'SYSTEM_EVENT',
+      action: 'created',
+      event: {
+        id: 99,
+        channel_codice: 'AUDIT',
+        titolo: 'Nuovo Ordine RealTime #99',
+        stato: 'completato',
+        progresso: 100,
+        is_async: false
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Nuovo Ordine RealTime #99')
+
+    // Simulate progress update on existing event
+    wsService.notifyListeners({
+      type: 'SYSTEM_EVENT',
+      action: 'progress',
+      event: {
+        id: 99,
+        channel_codice: 'AUDIT',
+        titolo: 'Nuovo Ordine RealTime #99 (Aggiornato)',
+        stato: 'in_corso',
+        progresso: 75,
+        is_async: false
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Nuovo Ordine RealTime #99 (Aggiornato)')
+    expect(wrapper.text()).toContain('75')
+  })
 })

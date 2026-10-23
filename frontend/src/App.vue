@@ -24,6 +24,12 @@
 
         <q-space />
 
+        <!-- Live WebSocket Indicator -->
+        <div class="row items-center q-mr-sm" :title="wsConnected ? 'Connesso a Event Bus Live' : 'Disconnesso da Event Bus'">
+          <q-icon name="fiber_manual_record" :color="wsConnected ? 'positive' : 'grey-5'" size="14px" />
+          <span class="text-caption q-ml-xs text-white" style="font-size: 11px">Live WS</span>
+        </div>
+
         <!-- Toggle Dark Mode -->
         <q-btn
           flat
@@ -270,12 +276,39 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useQuasar } from 'quasar'
+import wsService from './services/websocket.js'
 
 const router = useRouter()
+const $q = useQuasar()
 const isLoggedIn = ref(false)
 const currentUser = ref('')
 const userRole = ref('')
 const leftDrawerOpen = ref(true)
+const wsConnected = wsService.isConnected
+let unsubWs = null
+
+const handleGlobalWsEvent = (msg) => {
+  if (msg.type === 'SYSTEM_EVENT' && msg.event) {
+    const ev = msg.event
+    if (msg.action === 'created' || msg.action === 'completed') {
+      try {
+        if ($q && $q.notify) {
+          $q.notify({
+            type: ev.livello === 'error' ? 'negative' : (ev.livello === 'warning' ? 'warning' : 'info'),
+            message: ev.titolo,
+            caption: ev.descrizione || `Evento ${ev.azione}`,
+            icon: 'notifications',
+            position: 'top-right',
+            timeout: 4000
+          })
+        }
+      } catch (e) {
+        // notify not available in test env
+      }
+    }
+  }
+}
 
 const activeModules = ref({
   anagrafiche: true,
@@ -302,6 +335,9 @@ const fetchModules = async () => {
 onUnmounted(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('auth-change', checkAuth)
+  }
+  if (unsubWs) {
+    unsubWs()
   }
 })
 
@@ -334,6 +370,8 @@ const checkAuth = async () => {
 onMounted(() => {
   checkAuth()
   fetchModules()
+  wsService.connect()
+  unsubWs = wsService.subscribe(handleGlobalWsEvent)
   if (typeof window !== 'undefined') {
     window.addEventListener('auth-change', checkAuth)
   }

@@ -2,7 +2,10 @@
   <div class="q-pa-md">
     <div class="row items-center justify-between q-mb-md">
       <div>
-        <h2 class="text-h5 text-weight-bold q-my-none">Centro Attività, Code & Comunicazioni</h2>
+        <div class="row items-center">
+          <h2 class="text-h5 text-weight-bold q-my-none">Centro Attività, Code & Comunicazioni</h2>
+          <q-badge :color="wsConnected ? 'positive' : 'grey-6'" :label="wsConnected ? 'LIVE WS' : 'OFFLINE'" class="q-ml-sm" />
+        </div>
         <div class="text-caption text-grey-7">Audit Trail delle operazioni, Coda task asincroni in background e Registro Comunicazioni Outbox</div>
       </div>
       <div>
@@ -325,14 +328,29 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
+import wsService from '../services/websocket.js'
 
 const activeTab = ref('audit')
 const events = ref([])
 const channels = ref([])
 const loading = ref(false)
 const searchTerm = ref('')
+const wsConnected = wsService.isConnected
+let unsubscribeWs = null
+
+const handleWsMessage = (msg) => {
+  if (msg.type === 'SYSTEM_EVENT' && msg.event) {
+    const ev = msg.event
+    const existingIndex = events.value.findIndex(e => e.id === ev.id)
+    if (existingIndex >= 0) {
+      events.value[existingIndex] = { ...events.value[existingIndex], ...ev }
+    } else {
+      events.value.unshift(ev)
+    }
+  }
+}
 
 const detailDialogOpen = ref(false)
 const selectedEvent = ref(null)
@@ -499,5 +517,13 @@ const saveChannel = async () => {
 
 onMounted(() => {
   fetchData()
+  wsService.connect()
+  unsubscribeWs = wsService.subscribe(handleWsMessage)
+})
+
+onUnmounted(() => {
+  if (unsubscribeWs) {
+    unsubscribeWs()
+  }
 })
 </script>

@@ -119,3 +119,39 @@ def test_websocket_connection(client, db_session):
         websocket.send_text("ping")
         data = websocket.receive_text()
         assert data == "pong"
+
+def test_websocket_broadcast_on_event_dispatched(client, db_session):
+    from services.event_dispatcher import dispatch_event
+
+    with client.websocket_connect("/ws") as websocket:
+        ev = dispatch_event(
+            db=db_session,
+            azione="test_ws_broadcast",
+            titolo="Notifica Realtime Test",
+            descrizione="Test invio su websocket"
+        )
+        msg = websocket.receive_json()
+        assert msg["type"] == "SYSTEM_EVENT"
+        assert msg["action"] == "created"
+        assert msg["event"]["id"] == ev.id
+        assert msg["event"]["azione"] == "test_ws_broadcast"
+
+def test_websocket_broadcast_async_task_progress(client, db_session):
+    from services.event_dispatcher import dispatch_event
+
+    with client.websocket_connect("/ws") as websocket:
+        ev = dispatch_event(
+            db=db_session,
+            azione="batch_test_async",
+            titolo="Batch Task Asincrono",
+            is_async=True
+        )
+        msg_created = websocket.receive_json()
+        assert msg_created["type"] == "SYSTEM_EVENT"
+        assert msg_created["action"] == "created"
+        assert msg_created["event"]["id"] == ev.id
+
+        msg_prog = websocket.receive_json()
+        assert msg_prog["type"] == "SYSTEM_EVENT"
+        assert msg_prog["action"] in ["progress", "completed"]
+
