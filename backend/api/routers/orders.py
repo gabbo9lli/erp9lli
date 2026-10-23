@@ -8,6 +8,7 @@ from database import get_db
 from models import CustomerOrder, OrderItem, DeliveryNote, DeliveryNoteItem, Partner, Product, User
 from api.deps import require_auth
 from services.event_dispatcher import dispatch_event
+from schemas.order import OrderResponse
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
@@ -19,7 +20,7 @@ def get_next_ddt_number(anno: int, db: Session) -> int:
     max_num = db.query(func.max(DeliveryNote.numero)).filter_by(anno=anno).scalar()
     return (max_num or 0) + 1
 
-@router.get("")
+@router.get("", response_model=List[OrderResponse])
 def get_orders(
     stato: Optional[str] = None,
     cliente_id: Optional[int] = None,
@@ -42,9 +43,9 @@ def get_orders(
             (Partner.ragione_sociale.ilike(search_filter))
         )
     orders = query.order_by(CustomerOrder.data_ordine.desc(), CustomerOrder.numero.desc()).all()
-    return [o.to_dict() for o in orders]
+    return orders
 
-@router.get("/{oid}")
+@router.get("/{oid}", response_model=OrderResponse)
 def get_order_detail(
     oid: int,
     current_user: User = Depends(require_auth()),
@@ -52,10 +53,10 @@ def get_order_detail(
 ):
     order = db.get(CustomerOrder, oid)
     if not order:
-        return JSONResponse(status_code=404, content={"error": "Order not found"})
-    return order.to_dict()
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_order(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -136,12 +137,12 @@ async def create_order(
     try:
         db.commit()
         db.refresh(order)
-        return JSONResponse(status_code=201, content=order.to_dict())
+        return order
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.put("/{oid}")
+@router.put("/{oid}", response_model=OrderResponse)
 async def update_order(
     oid: int,
     request: Request,
@@ -150,9 +151,9 @@ async def update_order(
 ):
     order = db.get(CustomerOrder, oid)
     if not order:
-        return JSONResponse(status_code=404, content={"error": "Order not found"})
+        raise HTTPException(status_code=404, detail="Order not found")
     if order.stato == 'chiuso':
-        return JSONResponse(status_code=400, content={"error": "Impossibile modificare un ordine chiuso"})
+        raise HTTPException(status_code=400, detail="Impossibile modificare un ordine chiuso")
 
     data = await request.json()
     if 'note' in data:
@@ -165,10 +166,10 @@ async def update_order(
     try:
         db.commit()
         db.refresh(order)
-        return order.to_dict()
+        return order
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/{oid}/fulfill-to-ddt", status_code=status.HTTP_201_CREATED)
 async def fulfill_order_to_ddt(

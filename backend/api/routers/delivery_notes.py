@@ -9,6 +9,7 @@ from models import DeliveryNote, DeliveryNoteItem, Partner, Product, User
 from api.deps import require_auth
 from services.barcode_label_service import BarcodeLabelService
 from services.event_dispatcher import dispatch_event
+from schemas.delivery_note import DeliveryNoteResponse
 
 router = APIRouter(prefix="/api/delivery-notes", tags=["DeliveryNotes"])
 
@@ -16,7 +17,7 @@ def get_next_ddt_number(anno: int, db: Session) -> int:
     max_num = db.query(func.max(DeliveryNote.numero)).filter_by(anno=anno).scalar()
     return (max_num or 0) + 1
 
-@router.get("")
+@router.get("", response_model=List[DeliveryNoteResponse])
 def get_delivery_notes(
     stato: Optional[str] = None,
     cliente_id: Optional[int] = None,
@@ -39,9 +40,9 @@ def get_delivery_notes(
             (Partner.ragione_sociale.ilike(search_filter))
         )
     ddts = query.order_by(DeliveryNote.data_documento.desc(), DeliveryNote.numero.desc()).all()
-    return [d.to_dict() for d in ddts]
+    return ddts
 
-@router.get("/unbilled")
+@router.get("/unbilled", response_model=List[DeliveryNoteResponse])
 def get_unbilled_delivery_notes(
     cliente_id: Optional[int] = None,
     current_user: User = Depends(require_auth()),
@@ -52,9 +53,9 @@ def get_unbilled_delivery_notes(
     if cliente_id:
         query = query.filter(DeliveryNote.cliente_id == cliente_id)
     ddts = [d for d in query.all() if not getattr(d, 'invoice_id', None)]
-    return [d.to_dict() for d in ddts]
+    return ddts
 
-@router.get("/{did}")
+@router.get("/{did}", response_model=DeliveryNoteResponse)
 def get_delivery_note_detail(
     did: int,
     current_user: User = Depends(require_auth()),
@@ -62,10 +63,10 @@ def get_delivery_note_detail(
 ):
     ddt = db.get(DeliveryNote, did)
     if not ddt:
-        return JSONResponse(status_code=404, content={"error": "Delivery note not found"})
-    return ddt.to_dict()
+        raise HTTPException(status_code=404, detail="Delivery note not found")
+    return ddt
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=DeliveryNoteResponse, status_code=status.HTTP_201_CREATED)
 async def create_delivery_note(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -171,12 +172,12 @@ async def create_delivery_note(
     try:
         db.commit()
         db.refresh(ddt)
-        return JSONResponse(status_code=201, content=ddt.to_dict())
+        return ddt
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.put("/{did}")
+@router.put("/{did}", response_model=DeliveryNoteResponse)
 async def update_delivery_note(
     did: int,
     request: Request,
@@ -185,9 +186,9 @@ async def update_delivery_note(
 ):
     ddt = db.get(DeliveryNote, did)
     if not ddt:
-        return JSONResponse(status_code=404, content={"error": "Delivery note not found"})
+        raise HTTPException(status_code=404, detail="Delivery note not found")
     if ddt.stato != 'bozza':
-        return JSONResponse(status_code=400, content={"error": f"Impossibile modificare un DDT in stato '{ddt.stato}' (confermato)"})
+        raise HTTPException(status_code=400, detail=f"Impossibile modificare un DDT in stato '{ddt.stato}' (confermato)")
 
     data = await request.json()
     for key in ('vettore_id', 'causale_trasporto', 'porto', 'aspetto_beni', 'note'):
@@ -197,10 +198,10 @@ async def update_delivery_note(
     try:
         db.commit()
         db.refresh(ddt)
-        return ddt.to_dict()
+        return ddt
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{did}")
 def delete_delivery_note(
@@ -210,9 +211,9 @@ def delete_delivery_note(
 ):
     ddt = db.get(DeliveryNote, did)
     if not ddt:
-        return JSONResponse(status_code=404, content={"error": "Delivery note not found"})
+        raise HTTPException(status_code=404, detail="Delivery note not found")
     if ddt.stato != 'bozza':
-        return JSONResponse(status_code=400, content={"error": f"Impossibile eliminare un DDT in stato '{ddt.stato}' (confermato)"})
+        raise HTTPException(status_code=400, detail=f"Impossibile eliminare un DDT in stato '{ddt.stato}' (confermato)")
 
     try:
         db.delete(ddt)
@@ -220,9 +221,9 @@ def delete_delivery_note(
         return {"message": "Delivery note deleted"}
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/{did}/confirm")
+@router.post("/{did}/confirm", response_model=DeliveryNoteResponse)
 def confirm_delivery_note(
     did: int,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -230,9 +231,9 @@ def confirm_delivery_note(
 ):
     ddt = db.get(DeliveryNote, did)
     if not ddt:
-        return JSONResponse(status_code=404, content={"error": "Delivery note not found"})
+        raise HTTPException(status_code=404, detail="Delivery note not found")
     if not ddt.items:
-        return JSONResponse(status_code=400, content={"error": "Impossibile confermare un DDT senza righe merce"})
+        raise HTTPException(status_code=400, detail="Impossibile confermare un DDT senza righe merce")
 
     ddt.stato = 'confermato'
     try:
@@ -242,6 +243,7 @@ def confirm_delivery_note(
         # Dispatch evento su Event Bus
         try:
             dispatch_event(
+                db=db,
                 azione="emissione_ddt",
                 titolo=f"Emissione DDT {ddt.numero_completo}",
                 descrizione=f"DDT emesso per cliente {ddt.cliente.ragione_sociale}",
@@ -249,16 +251,15 @@ def confirm_delivery_note(
                 category_code="LOGISTICA",
                 entita_tipo="delivery_note",
                 entita_id=ddt.id,
-                partner_id=ddt.cliente_id,
-                db=db
+                partner_id=ddt.cliente_id
             )
         except Exception:
             pass
 
-        return ddt.to_dict()
+        return ddt
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{did}/labels")
 def get_delivery_note_labels(
