@@ -24,6 +24,11 @@ while True:
 END
   echo "PostgreSQL is up - executing database migrations..."
   alembic upgrade head || echo "Migrations completed or already at head."
+
+  echo "Seeding initial dataset (Users, ReteBio, Accounting)..."
+  python seed.py || true
+  python seed_accounting.py || true
+  python seed_retebio.py || true
 fi
 
 # Start Server based on Environment

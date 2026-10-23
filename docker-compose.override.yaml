@@ -23,7 +23,6 @@ services:
     volumes:
       - ./backend:/app
     env_file: .env.dev
-    command: python app.py
     depends_on:
       - redis
       - db

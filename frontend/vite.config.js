@@ -24,8 +24,12 @@ export default defineConfig({
       '/api': {
         target: 'http://backend:5000', // Use the Docker service name of the FastAPI app
         changeOrigin: true,
-        secure: false,
-        ws: true
+        secure: false
+      },
+      '/ws': {
+        target: 'ws://backend:5000',
+        ws: true,
+        changeOrigin: true
       }
     },
 
