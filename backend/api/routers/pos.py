@@ -15,6 +15,7 @@ from services.pos_driver_service import PosDriverService
 from services.event_dispatcher import dispatch_event
 from seed_accounting import seed_default_accounting_causals
 from api.routers.accounting import get_next_journal_entry_number
+from schemas.pos import PosStationResponse, PosSaleResponse
 
 router = APIRouter(prefix="/api/pos", tags=["POS BancoM"])
 
@@ -40,16 +41,16 @@ def get_next_pos_sale_number(anno: int, db: Session) -> str:
     next_num = max_num + 1
     return f"SC-{anno}-{next_num:04d}"
 
-@router.get("/stations")
+@router.get("/stations", response_model=List[PosStationResponse])
 def get_pos_stations(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)
 ):
     seed_default_pos_stations(db)
     stations = db.query(PosStation).order_by(PosStation.id.asc()).all()
-    return [s.to_dict() for s in stations]
+    return stations
 
-@router.post("/stations", status_code=status.HTTP_201_CREATED)
+@router.post("/stations", response_model=PosStationResponse, status_code=status.HTTP_201_CREATED)
 async def create_pos_station(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -59,7 +60,7 @@ async def create_pos_station(
     codice = (data.get('codice') or '').strip().upper()
     nome = (data.get('nome') or '').strip()
     if not codice or not nome:
-        return JSONResponse(status_code=400, content={"error": "codice e nome sono obbligatori"})
+        raise HTTPException(status_code=400, detail="codice e nome sono obbligatori")
     st = PosStation(
         codice=codice,
         nome=nome,
@@ -74,9 +75,9 @@ async def create_pos_station(
     db.add(st)
     db.commit()
     db.refresh(st)
-    return JSONResponse(status_code=201, content=st.to_dict())
+    return st
 
-@router.put("/stations/{sid}")
+@router.put("/stations/{sid}", response_model=PosStationResponse)
 async def update_pos_station(
     sid: int,
     request: Request,
@@ -85,25 +86,25 @@ async def update_pos_station(
 ):
     st = db.get(PosStation, sid)
     if not st:
-        return JSONResponse(status_code=404, content={"error": "Punto cassa non trovato"})
+        raise HTTPException(status_code=404, detail="Punto cassa non trovato")
     data = await request.json()
     for field in ['nome', 'driver_tipo', 'ip_address', 'porta', 'matricola_rt', 'intestazione', 'pie_pagina', 'attivo']:
         if field in data:
             setattr(st, field, data[field])
     db.commit()
     db.refresh(st)
-    return st.to_dict()
+    return st
 
-@router.get("/sales")
+@router.get("/sales", response_model=List[PosSaleResponse])
 def get_pos_sales(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)
 ):
     seed_default_pos_stations(db)
     sales = db.query(PosSale).order_by(PosSale.id.desc()).limit(100).all()
-    return [s.to_dict() for s in sales]
+    return sales
 
-@router.post("/sales", status_code=status.HTTP_201_CREATED)
+@router.post("/sales", response_model=PosSaleResponse, status_code=status.HTTP_201_CREATED)
 async def create_pos_sale(
     request: Request,
     current_user: User = Depends(require_auth()),

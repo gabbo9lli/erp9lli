@@ -11,19 +11,20 @@ from services.event_dispatcher import (
     get_redis_connection
 )
 from rq import Queue
+from schemas.event import EventChannelResponse, EventCategoryResponse, EventTypeResponse, SystemEventResponse
 
 router = APIRouter(prefix="/api/events", tags=["Event Bus"])
 
-@router.get("/channels")
+@router.get("/channels", response_model=List[EventChannelResponse])
 def get_event_channels(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)
 ):
     seed_default_channels_and_categories(db)
     channels = db.query(EventChannel).filter_by(attivo=True).order_by(EventChannel.codice.asc()).all()
-    return [c.to_dict() for c in channels]
+    return channels
 
-@router.post("/channels", status_code=status.HTTP_201_CREATED)
+@router.post("/channels", response_model=EventChannelResponse, status_code=status.HTTP_201_CREATED)
 async def create_event_channel(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -33,7 +34,7 @@ async def create_event_channel(
     codice = (data.get('codice') or '').strip().upper()
     nome = (data.get('nome') or '').strip()
     if not codice or not nome:
-        return JSONResponse(status_code=400, content={"error": "codice e nome obbligatori"})
+        raise HTTPException(status_code=400, detail="codice e nome obbligatori")
     ch = EventChannel(
         codice=codice,
         nome=nome,
@@ -46,27 +47,27 @@ async def create_event_channel(
     db.add(ch)
     db.commit()
     db.refresh(ch)
-    return JSONResponse(status_code=201, content=ch.to_dict())
+    return ch
 
-@router.get("/categories")
+@router.get("/categories", response_model=List[EventCategoryResponse])
 def get_event_categories(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)
 ):
     seed_default_channels_and_categories(db)
     categories = db.query(EventCategory).filter_by(attivo=True).order_by(EventCategory.codice.asc()).all()
-    return [cat.to_dict() for cat in categories]
+    return categories
 
-@router.get("/types")
+@router.get("/types", response_model=List[EventTypeResponse])
 def get_event_types(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)
 ):
     seed_default_channels_and_categories(db)
     types = db.query(EventType).order_by(EventType.codice.asc()).all()
-    return [t.to_dict() for t in types]
+    return types
 
-@router.post("/types", status_code=status.HTTP_201_CREATED)
+@router.post("/types", response_model=EventTypeResponse, status_code=status.HTTP_201_CREATED)
 async def create_event_type(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -77,7 +78,7 @@ async def create_event_type(
     nome = (data.get('nome') or '').strip()
     channel_id = data.get('channel_id')
     if not codice or not nome or not channel_id:
-        return JSONResponse(status_code=400, content={"error": "codice, nome e channel_id sono obbligatori"})
+        raise HTTPException(status_code=400, detail="codice, nome e channel_id sono obbligatori")
     et = EventType(
         codice=codice,
         nome=nome,
@@ -92,9 +93,9 @@ async def create_event_type(
     db.add(et)
     db.commit()
     db.refresh(et)
-    return JSONResponse(status_code=201, content=et.to_dict())
+    return et
 
-@router.put("/types/{tid}")
+@router.put("/types/{tid}", response_model=EventTypeResponse)
 async def update_event_type_policy(
     tid: int,
     request: Request,
@@ -103,15 +104,15 @@ async def update_event_type_policy(
 ):
     et = db.get(EventType, tid)
     if not et:
-        return JSONResponse(status_code=404, content={"error": "Tipo evento non trovato"})
+        raise HTTPException(status_code=404, detail="Tipo evento non trovato")
     data = await request.json()
     if 'modalita_esecuzione' in data:
         if data['modalita_esecuzione'] not in ['sincrono', 'asincrono']:
-            return JSONResponse(status_code=400, content={"error": "modalita_esecuzione non valida (ammessi: sincrono, asincrono)"})
+            raise HTTPException(status_code=400, detail="modalita_esecuzione non valida (ammessi: sincrono, asincrono)")
         et.modalita_esecuzione = data['modalita_esecuzione']
     if 'coda_nome' in data:
         if data['coda_nome'] not in ['critical', 'emails', 'batch', 'default']:
-            return JSONResponse(status_code=400, content={"error": "coda_nome non valida (ammessi: critical, emails, batch, default)"})
+            raise HTTPException(status_code=400, detail="coda_nome non valida (ammessi: critical, emails, batch, default)")
         et.coda_nome = data['coda_nome']
     if 'channel_id' in data:
         et.channel_id = data['channel_id']
@@ -121,7 +122,7 @@ async def update_event_type_policy(
         et.attivo = data['attivo']
     db.commit()
     db.refresh(et)
-    return et.to_dict()
+    return et
 
 @router.get("/queues")
 def get_redis_queues_stats(
@@ -147,7 +148,7 @@ def get_redis_queues_stats(
         })
     return {"queues": queues_stats}
 
-@router.get("")
+@router.get("", response_model=List[SystemEventResponse])
 def get_events(
     channel: Optional[str] = None,
     stato: Optional[str] = None,
@@ -169,9 +170,9 @@ def get_events(
         query = query.filter(SystemEvent.is_async == is_async)
 
     events = query.order_by(SystemEvent.data_creazione.desc()).limit(100).all()
-    return [ev.to_dict() for ev in events]
+    return events
 
-@router.get("/{eid}")
+@router.get("/{eid}", response_model=SystemEventResponse)
 def get_event_detail(
     eid: int,
     current_user: User = Depends(require_auth()),
@@ -179,10 +180,10 @@ def get_event_detail(
 ):
     ev = db.get(SystemEvent, eid)
     if not ev:
-        return JSONResponse(status_code=404, content={"error": "Evento non trovato"})
-    return ev.to_dict()
+        raise HTTPException(status_code=404, detail="Evento non trovato")
+    return ev
 
-@router.post("")
+@router.post("", response_model=SystemEventResponse)
 async def create_event_endpoint(
     request: Request,
     current_user: User = Depends(require_auth()),
