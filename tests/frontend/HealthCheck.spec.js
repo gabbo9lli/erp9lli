@@ -9,7 +9,8 @@ describe('HealthCheck.vue', () => {
 
   it('renders correctly and fetches health status on mount', async () => {
     const mockHealth = {
-      flask_status: 'UP',
+      status: 'UP',
+      fastapi_status: 'UP',
       database: {
         status: 'UP',
         type: 'postgresql',

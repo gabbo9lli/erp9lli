@@ -4,8 +4,9 @@ from models import User
 def test_health_check(client, db_session):
     res = client.get('/api/health')
     assert res.status_code == 200
-    data = res.get_json()
-    assert data['flask_status'] == 'UP'
+    data = res.json()
+    assert data['status'] == 'UP'
+    assert data['fastapi_status'] == 'UP'
     assert data['database']['status'] == 'UP'
 
 def test_signup_and_signin_jwt(client, db_session):
@@ -15,7 +16,7 @@ def test_signup_and_signin_jwt(client, db_session):
         'password': 'SecurePassword123!'
     })
     assert signup_res.status_code == 201
-    assert signup_res.get_json()['message'] == 'Account created successfully'
+    assert signup_res.json()['message'] == 'Account created successfully'
 
     # Signin (JWT token)
     signin_res = client.post('/api/signin', json={
@@ -23,7 +24,7 @@ def test_signup_and_signin_jwt(client, db_session):
         'password': 'SecurePassword123!'
     })
     assert signin_res.status_code == 200
-    data = signin_res.get_json()
+    data = signin_res.json()
     assert 'access_token' in data
     assert len(data['access_token']) > 10
 
@@ -33,7 +34,7 @@ def test_signin_invalid_credentials(client, db_session):
         'password': 'WrongPassword!'
     })
     assert res.status_code == 401
-    assert 'msg' in res.get_json()
+    assert 'msg' in res.json()
 
 def test_login_endpoint(client, db_session):
     client.post('/api/signup', json={
@@ -45,7 +46,7 @@ def test_login_endpoint(client, db_session):
         'password': 'Password123!'
     })
     assert res.status_code == 200
-    assert res.get_json()['user'] == 'loginuser@example.com'
+    assert res.json()['user'] == 'loginuser@example.com'
 
 def test_db_explorer_tables(client, db_session):
     admin_headers = {
@@ -55,7 +56,7 @@ def test_db_explorer_tables(client, db_session):
     client.get('/api/me', headers=admin_headers)
     res = client.get('/api/db-explorer', headers=admin_headers)
     assert res.status_code == 200
-    data = res.get_json()
+    data = res.json()
     assert 'tables' in data
     table_names = [t['name'] for t in data['tables']]
     assert 'user' in table_names
@@ -69,7 +70,7 @@ def test_db_explorer_sqli_protection(client, db_session):
     # Invalid table should return 404
     res = client.get('/api/db-explorer/fake_table_not_exists/data', headers=admin_headers)
     assert res.status_code == 404
-    assert res.get_json()['error'] == 'Table not found'
+    assert res.json()['error'] == 'Table not found'
 
     # Injection string should be safely rejected with 404
     sqli_res = client.get('/api/db-explorer/user;DROP%20TABLE%20user;/data', headers=admin_headers)

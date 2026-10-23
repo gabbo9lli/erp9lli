@@ -64,17 +64,17 @@ def test_unbilled_delivery_notes(client, db_session):
         "cliente_id": c_id,
         "items": [{"product_id": p_id, "colli": 1, "quantita": 10.0}]
     }, headers=admin_headers)
-    ddt_id = ddt_res.get_json()['id']
+    ddt_id = ddt_res.json()['id']
 
     # In bozza, should NOT be in unbilled list
     ub_res1 = client.get(f'/api/delivery-notes/unbilled?cliente_id={c_id}', headers=admin_headers)
     assert ub_res1.status_code == 200
-    assert not any(d['id'] == ddt_id for d in ub_res1.get_json())
+    assert not any(d['id'] == ddt_id for d in ub_res1.json())
 
     # Confirm DDT -> Now it should appear in unbilled
     client.post(f'/api/delivery-notes/{ddt_id}/confirm', headers=admin_headers)
     ub_res2 = client.get(f'/api/delivery-notes/unbilled?cliente_id={c_id}', headers=admin_headers)
-    assert any(d['id'] == ddt_id for d in ub_res2.get_json())
+    assert any(d['id'] == ddt_id for d in ub_res2.json())
 
 def test_invoice_differita_from_ddt(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
@@ -96,7 +96,7 @@ def test_invoice_differita_from_ddt(client, db_session):
             {"product_id": p2_id, "colli": 2, "quantita": 2.0, "prezzo_unitario": 10.0}
         ]
     }, headers=admin_headers)
-    ddt_id = ddt_res.get_json()['id']
+    ddt_id = ddt_res.json()['id']
     client.post(f'/api/delivery-notes/{ddt_id}/confirm', headers=admin_headers)
 
     # Issue Differita Invoice
@@ -108,7 +108,7 @@ def test_invoice_differita_from_ddt(client, db_session):
     }
     inv_res = client.post('/api/invoices/from-ddt', json=inv_payload, headers=admin_headers)
     assert inv_res.status_code == 201
-    inv_data = inv_res.get_json()
+    inv_data = inv_res.json()
 
     assert inv_data['tipo_documento'] == "TD24"
     assert inv_data['numero_completo'] == "FT-2026-0001"
@@ -151,7 +151,7 @@ def test_installments_quadratura_odd_amount(client, db_session):
     }
     res = client.post('/api/invoices', json=payload, headers=admin_headers)
     assert res.status_code == 201
-    data = res.get_json()
+    data = res.json()
     assert data['totale_fattura'] == 100.05
 
     rate = data['installments']
@@ -173,15 +173,15 @@ def test_pay_installment_and_auto_close_invoice(client, db_session):
         "condizioni_pagamento": "bonifico a vista",
         "items": [{"product_id": p_id, "colli": 1, "quantita": 1.0, "prezzo_unitario": 50.0, "aliquota_iva": 0}]
     }, headers=admin_headers)
-    inv_data = res.get_json()
+    inv_data = res.json()
     inv_id = inv_data['id']
     rata_id = inv_data['installments'][0]['id']
 
     # Pay installment
     pay_res = client.post(f'/api/installments/{rata_id}/pay', headers=admin_headers)
     assert pay_res.status_code == 200
-    assert pay_res.get_json()['stato'] == "incassata"
+    assert pay_res.json()['stato'] == "incassata"
 
     # Check invoice status updated to 'saldata'
-    inv_detail = client.get(f'/api/invoices/{inv_id}', headers=admin_headers).get_json()
+    inv_detail = client.get(f'/api/invoices/{inv_id}', headers=admin_headers).json()
     assert inv_detail['stato'] == "saldata"

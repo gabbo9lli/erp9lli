@@ -90,7 +90,7 @@ def test_auto_accounting_and_event_on_invoice_creation(client, db_session):
 
     res = client.post('/api/invoices', json=payload, headers=admin_headers)
     assert res.status_code == 201
-    inv_data = res.get_json()
+    inv_data = res.json()
     inv_id = inv_data["id"]
 
     inv = db_session.get(Invoice, inv_id)
@@ -132,7 +132,7 @@ def test_auto_accounting_and_event_on_installment_pay(client, db_session):
         "items": [{"product_id": p_id, "quantita": 2.0, "prezzo_unitario": 5.0, "aliquota_iva": 4.0}]
     }, headers=admin_headers)
     assert inv_res.status_code == 201
-    inv_id = inv_res.get_json()["id"]
+    inv_id = inv_res.json()["id"]
 
     inv = db_session.get(Invoice, inv_id)
     assert len(inv.installments) > 0
@@ -178,7 +178,7 @@ def test_auto_accounting_and_event_on_credit_note(client, db_session):
         "items": [{"product_id": p_id, "quantita": 5.0, "prezzo_unitario": 10.0, "aliquota_iva": 4.0}]
     }, headers=admin_headers)
     assert inv_res.status_code == 201
-    inv_id = inv_res.get_json()["id"]
+    inv_id = inv_res.json()["id"]
 
     inv = db_session.get(Invoice, inv_id)
     nc_items_payload = [{"invoice_item_id": it.id, "quantita_stornata": it.quantita} for it in inv.items]
@@ -188,7 +188,7 @@ def test_auto_accounting_and_event_on_credit_note(client, db_session):
         "items": nc_items_payload
     }, headers=admin_headers)
     assert nc_res.status_code == 201
-    nc_data = nc_res.get_json()
+    nc_data = nc_res.json()
     nc_id = nc_data["id"]
 
     nc = db_session.get(Invoice, nc_id)
@@ -211,7 +211,7 @@ def test_api_accounting_causals_crud(client, db_session):
     # 1. GET
     res_list = client.get('/api/accounting/causals', headers=admin_headers)
     assert res_list.status_code == 200
-    causals = res_list.get_json()
+    causals = res_list.json()
     assert isinstance(causals, list)
     first_causal = causals[0]
 
@@ -220,7 +220,7 @@ def test_api_accounting_causals_crud(client, db_session):
         "descrizione": "Nuova Descrizione Modificata"
     }, headers=admin_headers)
     assert res_put.status_code == 200
-    assert res_put.get_json()["descrizione"] == "Nuova Descrizione Modificata"
+    assert res_put.json()["descrizione"] == "Nuova Descrizione Modificata"
 
     # 3. POST new
     res_post = client.post('/api/accounting/causals', json={
@@ -229,4 +229,4 @@ def test_api_accounting_causals_crud(client, db_session):
         "tipo_registro": "generale"
     }, headers=admin_headers)
     assert res_post.status_code == 201
-    assert res_post.get_json()["codice"] == "TEST_EXTRA"
+    assert res_post.json()["codice"] == "TEST_EXTRA"

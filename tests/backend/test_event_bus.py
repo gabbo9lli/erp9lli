@@ -95,14 +95,14 @@ def test_api_events_crud_and_channels(client, db_session):
     # 1. Channels list
     res_ch = client.get('/api/events/channels', headers=admin_headers)
     assert res_ch.status_code == 200
-    channels = res_ch.get_json()
+    channels = res_ch.json()
     assert any(c['codice'] == 'AUDIT' for c in channels)
     assert any(c['codice'] == 'EMAIL' for c in channels)
 
     # 2. Categories list
     res_cat = client.get('/api/events/categories', headers=admin_headers)
     assert res_cat.status_code == 200
-    categories = res_cat.get_json()
+    categories = res_cat.json()
     assert any(cat['codice'] == 'LOGISTICA' for cat in categories)
 
     # 3. Create synchronous event
@@ -114,7 +114,7 @@ def test_api_events_crud_and_channels(client, db_session):
         "descrizione": "Dettaglio dell'audit"
     }, headers=admin_headers)
     assert res_ev.status_code == 201
-    ev_data = res_ev.get_json()
+    ev_data = res_ev.json()
     assert ev_data['stato'] == "completato"
     assert ev_data['progresso'] == 100
 
@@ -131,7 +131,7 @@ def test_api_async_event_returns_202(client, db_session):
         "is_async": True
     }, headers=admin_headers)
     assert res.status_code == 202
-    data = res.get_json()
+    data = res.json()
     assert data['is_async'] is True
     assert 'id' in data
 
@@ -141,6 +141,6 @@ def test_api_pallet_batch_solleciti_background(client, db_session):
 
     res = client.post('/api/pallets/batch-solleciti', headers=admin_headers)
     assert res.status_code == 202
-    data = res.get_json()
+    data = res.json()
     assert data['is_async'] is True
     assert data['azione'] == "sollecito_massivo_pallet"

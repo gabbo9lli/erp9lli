@@ -86,7 +86,7 @@ const socket = io({ path: '/api/socket.io' });
 const setupSocket = () => {
   socket.on('connect', () => console.log('✅ Socket Connected'));
   
-  // Listen for the event emitted by your Flask backend
+  // Listen for the event emitted by your FastAPI backend
   socket.on('users_update', (data) => {
     users.value = data;
   });

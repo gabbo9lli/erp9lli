@@ -1,5 +1,7 @@
 import os
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine
 from models import Base
@@ -19,7 +21,16 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Configura CORS identico a Flask-CORS
+# Handler globale per eccezioni HTTP: garantisce standard detail ed error
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": detail, "error": detail if isinstance(detail, str) else str(detail)}
+    )
+
+# Configura CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

@@ -50,9 +50,9 @@ def test_create_credit_note_partial_reversal_and_installments_compensation(clien
         "items": [{"product_id": p_id, "quantita": 100, "prezzo_unitario": 2.0, "aliquota_iva": 4}]
     }, headers=admin_headers)
     assert inv_res.status_code == 201
-    inv_id = inv_res.get_json()['id']
+    inv_id = inv_res.json()['id']
 
-    inv_detail = client.get(f'/api/invoices/{inv_id}', headers=admin_headers).get_json()
+    inv_detail = client.get(f'/api/invoices/{inv_id}', headers=admin_headers).json()
     assert inv_detail['totale_fattura'] == 208.0
     item_id = inv_detail['items'][0]['id']
 
@@ -65,7 +65,7 @@ def test_create_credit_note_partial_reversal_and_installments_compensation(clien
         ]
     }, headers=admin_headers)
     assert nc_res.status_code == 201
-    nc_data = nc_res.get_json()
+    nc_data = nc_res.json()
 
     assert nc_data['tipo_documento'] == "TD04"
     assert nc_data['numero_completo'] == f"NC-{date.today().year}-0001"
@@ -74,7 +74,7 @@ def test_create_credit_note_partial_reversal_and_installments_compensation(clien
     assert nc_data['totale_fattura'] == 41.60
     assert nc_data['invoice_origine_id'] == inv_id
 
-    inv_updated = client.get(f'/api/invoices/{inv_id}', headers=admin_headers).get_json()
+    inv_updated = client.get(f'/api/invoices/{inv_id}', headers=admin_headers).json()
     assert inv_updated['installments'][0]['importo'] == 166.40
     assert inv_updated['installments'][0]['stato'] == "aperta"
 
@@ -93,7 +93,7 @@ def test_credit_note_full_compensation_closes_invoice(client, db_session):
         "tipo_documento": "TD01",
         "items": [{"product_id": p_id, "quantita": 10, "prezzo_unitario": 3.0, "aliquota_iva": 4}]
     }, headers=admin_headers)
-    inv_data = inv_res.get_json()
+    inv_data = inv_res.json()
     inv_id = inv_data['id']
     item_id = inv_data['items'][0]['id']
 
@@ -104,7 +104,7 @@ def test_credit_note_full_compensation_closes_invoice(client, db_session):
     }, headers=admin_headers)
     assert nc_res.status_code == 201
 
-    inv_updated = client.get(f'/api/invoices/{inv_id}', headers=admin_headers).get_json()
+    inv_updated = client.get(f'/api/invoices/{inv_id}', headers=admin_headers).json()
     assert inv_updated['installments'][0]['importo'] == 0.0
     assert inv_updated['installments'][0]['stato'] == "incassata"
     assert inv_updated['stato'] == "saldata"
@@ -135,15 +135,15 @@ def test_credit_note_sdi_xml_with_dati_fatture_collegate(client, db_session):
         "tipo_documento": "TD01",
         "items": [{"product_id": p_id, "quantita": 50, "prezzo_unitario": 2.0, "aliquota_iva": 4}]
     }, headers=admin_headers)
-    inv_id = inv_res.get_json()['id']
-    inv_num = inv_res.get_json()['numero_completo']
-    item_id = inv_res.get_json()['items'][0]['id']
+    inv_id = inv_res.json()['id']
+    inv_num = inv_res.json()['numero_completo']
+    item_id = inv_res.json()['items'][0]['id']
 
     nc_res = client.post(f'/api/invoices/{inv_id}/credit-note', json={
         "causale_storno": "Rettifica prezzo concordata",
         "items": [{"invoice_item_id": item_id, "quantita_stornata": 10.0}]
     }, headers=admin_headers)
-    nc_id = nc_res.get_json()['id']
+    nc_id = nc_res.json()['id']
 
     nc_obj = db_session.get(Invoice, nc_id)
     xml_str, filename = generate_sdi_xml(nc_obj)

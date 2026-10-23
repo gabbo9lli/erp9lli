@@ -84,7 +84,7 @@ def test_api_labels_generate_endpoint(client, db_session):
 
     res = client.post('/api/labels/generate', json=payload, headers=admin_headers)
     assert res.status_code == 200
-    data = res.get_json()
+    data = res.json()
     assert "zpl" in data
     assert "^XA" in data["zpl"]
     assert "svg_barcode" in data
@@ -133,7 +133,7 @@ def test_api_delivery_note_labels_generation(client, db_session):
 
     res = client.get(f'/api/delivery-notes/{ddt_id}/labels', headers=admin_headers)
     assert res.status_code == 200
-    labels_data = res.get_json()
+    labels_data = res.json()
     assert "labels" in labels_data
     assert len(labels_data["labels"]) == 1
     lbl = labels_data["labels"][0]

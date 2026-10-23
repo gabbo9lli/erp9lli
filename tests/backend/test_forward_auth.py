@@ -6,7 +6,7 @@ def test_api_me_unauthenticated_production(client, db_session):
     # In non-development mode or when headers are missing
     res = client.get('/api/me')
     assert res.status_code == 401
-    assert res.get_json()['authenticated'] is False
+    assert res.json()['authenticated'] is False
 
 def test_api_me_auto_provisioning_standard_user(client, db_session):
     headers = {
@@ -15,7 +15,7 @@ def test_api_me_auto_provisioning_standard_user(client, db_session):
     }
     res = client.get('/api/me', headers=headers)
     assert res.status_code == 200
-    data = res.get_json()
+    data = res.json()
     assert data['authenticated'] is True
     assert data['email'] == 'alice@company.com'
     assert data['username'] == 'alice'
@@ -35,7 +35,7 @@ def test_api_me_role_mapping_admin(client, db_session):
     }
     res = client.get('/api/me', headers=headers)
     assert res.status_code == 200
-    data = res.get_json()
+    data = res.json()
     assert data['authenticated'] is True
     assert data['role'] == 'Admin'
 
@@ -50,7 +50,7 @@ def test_api_me_existing_user_no_duplicate(client, db_session):
     # Second call returns existing
     res = client.get('/api/me', headers=headers)
     assert res.status_code == 200
-    assert res.get_json()['email'] == 'carol@company.com'
+    assert res.json()['email'] == 'carol@company.com'
 
     count = db_session.query(User).filter_by(email='carol@company.com').count()
     assert count == 1

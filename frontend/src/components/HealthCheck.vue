@@ -7,9 +7,9 @@
 
     <div class="status-grid">
       <div class="status-item">
-        <span>Flask API:</span>
-        <span :class="data.flask_status === 'UP' ? 'ok' : 'error'">
-          {{ data.flask_status || 'OFFLINE' }}
+        <span>FastAPI Backend:</span>
+        <span :class="isBackendUp ? 'ok' : 'error'">
+          {{ isBackendUp ? 'UP' : 'DOWN' }}
         </span>
       </div>
 
@@ -33,10 +33,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 
 const data = ref({})
 const loading = ref(false)
+
+const isBackendUp = computed(() => {
+  return data.value.status === 'UP' || data.value.fastapi_status === 'UP'
+})
 
 const checkHealth = async () => {
   loading.value = true
@@ -44,7 +48,7 @@ const checkHealth = async () => {
     const res = await fetch('/api/health')
     data.value = await res.json()
   } catch (err) {
-    data.value = { flask_status: 'DOWN' }
+    data.value = { status: 'DOWN', fastapi_status: 'DOWN' }
   } finally {
     loading.value = false
   }

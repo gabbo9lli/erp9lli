@@ -58,7 +58,7 @@ def test_create_pallet_receipt_sequential_and_term(client, db_session):
     }
     res = client.post('/api/pallets/receipts', json=payload, headers=admin_headers)
     assert res.status_code == 201
-    data = res.get_json()
+    data = res.json()
 
     assert data['numero_completo'] == f"BP-{date.today().year}-0001"
     assert data['totale_consegnati'] == 20
@@ -83,14 +83,14 @@ def test_pallet_receipt_return_and_settlement(client, db_session):
         "partner_id": v_id,
         "items": [{"pallet_type_id": pt_id, "quantita_consegnata": 30, "quantita_restituita": 0}]
     }, headers=admin_headers)
-    receipt_id = res_b.get_json()['id']
+    receipt_id = res_b.json()['id']
 
     # 1. Partial return: return 10 pallets -> balance becomes 20
     ret_res1 = client.post(f'/api/pallets/receipts/{receipt_id}/return', json={
         "items": [{"pallet_type_id": pt_id, "quantita_restituita": 10}]
     }, headers=admin_headers)
     assert ret_res1.status_code == 200
-    data1 = ret_res1.get_json()
+    data1 = ret_res1.json()
     assert data1['saldo_netto'] == 20
     assert data1['stato'] == "aperto"
 
@@ -99,7 +99,7 @@ def test_pallet_receipt_return_and_settlement(client, db_session):
         "items": [{"pallet_type_id": pt_id, "quantita_restituita": 20}]
     }, headers=admin_headers)
     assert ret_res2.status_code == 200
-    data2 = ret_res2.get_json()
+    data2 = ret_res2.json()
     assert data2['saldo_netto'] == 0
     assert data2['stato'] == "saldato"
 
@@ -120,7 +120,7 @@ def test_pallet_ledger_balances(client, db_session):
 
     res = client.get('/api/pallets/ledger', headers=admin_headers)
     assert res.status_code == 200
-    data = res.get_json()
+    data = res.json()
     assert isinstance(data, list)
     customer_ledger = next((l for l in data if l['partner_nome'] == "Supermercati Bio Pallet"), None)
     assert customer_ledger is not None
@@ -141,12 +141,12 @@ def test_invoice_unreturned_pallets_reverse_charge(client, db_session):
         "partner_id": c_id,
         "items": [{"pallet_type_id": pt_id, "quantita_consegnata": 10, "quantita_restituita": 0}]
     }, headers=admin_headers)
-    receipt_id = res_b.get_json()['id']
+    receipt_id = res_b.json()['id']
 
     # Invoice for unreturned pallets
     inv_res = client.post(f'/api/pallets/receipts/{receipt_id}/invoice-unreturned', headers=admin_headers)
     assert inv_res.status_code == 201
-    inv_data = inv_res.get_json()
+    inv_data = inv_res.json()
 
     assert inv_data['tipo_documento'] == "TD01"
     assert inv_data['totale_imponibile'] == 180.0
@@ -156,5 +156,5 @@ def test_invoice_unreturned_pallets_reverse_charge(client, db_session):
     assert "182/2025" in inv_data['note']
 
     # Receipt status updated to 'fatturato'
-    rec_detail = client.get(f'/api/pallets/receipts/{receipt_id}', headers=admin_headers).get_json()
+    rec_detail = client.get(f'/api/pallets/receipts/{receipt_id}', headers=admin_headers).json()
     assert rec_detail['stato'] == "fatturato"

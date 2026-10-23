@@ -205,18 +205,18 @@ def test_api_sdi_validate_and_download_xml(client, db_session):
         "items": [{"product_id": p_id, "quantita": 50, "prezzo_unitario": 1.8, "aliquota_iva": 4}]
     }, headers=admin_headers)
     assert inv_res.status_code == 201
-    inv_id = inv_res.get_json()['id']
+    inv_id = inv_res.json()['id']
 
     val_res = client.get(f'/api/invoices/{inv_id}/sdi-validate', headers=admin_headers)
     assert val_res.status_code == 200
-    val_data = val_res.get_json()
+    val_data = val_res.json()
     assert val_data['valido'] is True
     assert val_data['codice_destinatario'] == "KRRH6B9"
     assert val_data['tipo_documento'] == "TD01"
 
     xml_res = client.get(f'/api/invoices/{inv_id}/xml', headers=admin_headers)
     assert xml_res.status_code == 200
-    assert "application/xml" in xml_res.content_type
+    assert "application/xml" in xml_res.headers.get("content-type", "")
     assert "attachment" in xml_res.headers.get("Content-Disposition", "")
-    assert "FatturaElettronica" in xml_res.data.decode('utf-8')
-    assert "KRRH6B9" in xml_res.data.decode('utf-8')
+    assert "FatturaElettronica" in xml_res.text
+    assert "KRRH6B9" in xml_res.text

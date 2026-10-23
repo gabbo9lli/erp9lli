@@ -118,14 +118,14 @@ def test_api_ecommerce_webhook_endpoint_auth_and_import(client, db_session):
     headers = {"X-Ecommerce-Secret": "spree-secret-token"}
     res = client.post('/api/ecommerce/webhook/orders', json=payload, headers=headers)
     assert res.status_code == 201
-    data = res.get_json()
+    data = res.json()
     assert data["external_reference"] == "SPREE-HOOK-01"
     assert data["canale_vendita"] == "ecommerce"
 
     # 3. Second call with same payload -> 200 OK (idempotent)
     res_repeat = client.post('/api/ecommerce/webhook/orders', json=payload, headers=headers)
     assert res_repeat.status_code == 200
-    assert res_repeat.get_json()["id"] == data["id"]
+    assert res_repeat.json()["id"] == data["id"]
 
     # 4. Event Bus check
     ev = db_session.query(SystemEvent).filter_by(entita_tipo="customer_order", entita_id=data["id"]).first()
@@ -139,9 +139,9 @@ def test_api_ecommerce_stock_and_logs(client, db_session):
     # 1. Stock feed
     res_stock = client.get('/api/ecommerce/sync/stock', headers=admin_headers)
     assert res_stock.status_code == 200
-    assert isinstance(res_stock.get_json(), list)
+    assert isinstance(res_stock.json(), list)
 
     # 2. Sync logs
     res_logs = client.get('/api/ecommerce/logs', headers=admin_headers)
     assert res_logs.status_code == 200
-    assert isinstance(res_logs.get_json(), list)
+    assert isinstance(res_logs.json(), list)

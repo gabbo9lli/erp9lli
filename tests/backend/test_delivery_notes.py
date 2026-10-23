@@ -73,7 +73,7 @@ def test_create_delivery_note_with_items_and_totals(client, db_session):
 
     res = client.post('/api/delivery-notes', json=ddt_payload, headers=admin_headers)
     assert res.status_code == 201
-    data = res.get_json()
+    data = res.json()
     assert data['numero'] == 1
     assert data['numero_completo'] == "DDT-2026-0001"
     assert data['colli_totali'] == 15
@@ -100,11 +100,11 @@ def test_auto_numbering_sequential(client, db_session):
 
     res1 = client.post('/api/delivery-notes', json=payload, headers=admin_headers)
     assert res1.status_code == 201
-    n1 = res1.get_json()['numero']
+    n1 = res1.json()['numero']
 
     res2 = client.post('/api/delivery-notes', json=payload, headers=admin_headers)
     assert res2.status_code == 201
-    n2 = res2.get_json()['numero']
+    n2 = res2.json()['numero']
     assert n2 == n1 + 1
 
 def test_bio_traceability_validation(client, db_session):
@@ -125,7 +125,7 @@ def test_bio_traceability_validation(client, db_session):
     }
     fail_res = client.post('/api/delivery-notes', json=invalid_payload, headers=admin_headers)
     assert fail_res.status_code == 400
-    assert "lotto" in fail_res.get_json()['error'].lower()
+    assert "lotto" in fail_res.json()['error'].lower()
 
     # 2. With lotto and scadenza -> Should succeed
     valid_payload = {
@@ -141,7 +141,7 @@ def test_bio_traceability_validation(client, db_session):
     }
     ok_res = client.post('/api/delivery-notes', json=valid_payload, headers=admin_headers)
     assert ok_res.status_code == 201
-    assert ok_res.get_json()['items'][0]['lotto'] == "L26-UVA-001"
+    assert ok_res.json()['items'][0]['lotto'] == "L26-UVA-001"
 
 def test_confirm_delivery_note_and_immutability(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
@@ -159,17 +159,17 @@ def test_confirm_delivery_note_and_immutability(client, db_session):
         "items": [{"product_id": p_id, "colli": 10, "quantita": 10.0, "prezzo_unitario": 1.50}]
     }
     create_res = client.post('/api/delivery-notes', json=payload, headers=admin_headers)
-    ddt_id = create_res.get_json()['id']
+    ddt_id = create_res.json()['id']
 
     # Confirm DDT
     confirm_res = client.post(f'/api/delivery-notes/{ddt_id}/confirm', headers=admin_headers)
     assert confirm_res.status_code == 200
-    assert confirm_res.get_json()['stato'] == "confermato"
+    assert confirm_res.json()['stato'] == "confermato"
 
     # Attempt to modify confirmed DDT -> should fail with 400
     modify_res = client.put(f'/api/delivery-notes/{ddt_id}', json={"note": "Modified note"}, headers=admin_headers)
     assert modify_res.status_code == 400
-    assert "confermato" in modify_res.get_json()['error'].lower()
+    assert "confermato" in modify_res.json()['error'].lower()
 
     # Attempt to delete confirmed DDT -> should fail with 400
     delete_res = client.delete(f'/api/delivery-notes/{ddt_id}', headers=admin_headers)

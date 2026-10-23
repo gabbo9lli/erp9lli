@@ -27,7 +27,7 @@ def get_request_identity(request: Request):
     groups_header = request.headers.get('X-Forwarded-Groups', '')
     groups = [g.strip() for g in groups_header.split(',') if g.strip()]
 
-    is_dev = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('APP_ENV') == 'development'
+    is_dev = os.environ.get('APP_ENV') == 'development'
     is_testing = os.environ.get('TESTING', '0').lower() in ('1', 'true')
 
     if not email and is_dev and not is_testing:

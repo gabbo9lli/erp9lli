@@ -92,7 +92,7 @@ def test_api_event_types_crud_and_policy_update(client, db_session):
     # 1. Get Event Types list
     res_list = client.get('/api/events/types', headers=admin_headers)
     assert res_list.status_code == 200
-    types = res_list.get_json()
+    types = res_list.json()
     assert isinstance(types, list)
     ddt_type = next((t for t in types if t['codice'] == 'EMISSIONE_DDT'), None)
     assert ddt_type is not None
@@ -105,7 +105,7 @@ def test_api_event_types_crud_and_policy_update(client, db_session):
         "coda_nome": "default"
     }, headers=admin_headers)
     assert put_res.status_code == 200
-    updated_data = put_res.get_json()
+    updated_data = put_res.json()
     assert updated_data['modalita_esecuzione'] == "asincrono"
     assert updated_data['coda_nome'] == "default"
 
@@ -115,7 +115,7 @@ def test_api_redis_queues_stats(client, db_session):
 
     res = client.get('/api/events/queues', headers=admin_headers)
     assert res.status_code == 200
-    data = res.get_json()
+    data = res.json()
     assert 'queues' in data
     queue_names = [q['name'] for q in data['queues']]
     assert 'critical' in queue_names
@@ -128,7 +128,7 @@ def test_api_event_types_policy_validation_rejected(client, db_session):
     client.get('/api/me', headers=admin_headers)
 
     res_list = client.get('/api/events/types', headers=admin_headers)
-    types = res_list.get_json()
+    types = res_list.json()
     first_id = types[0]['id']
 
     # Invalid modalita

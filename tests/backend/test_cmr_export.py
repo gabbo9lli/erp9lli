@@ -62,12 +62,12 @@ def test_create_cmr_from_ddt_with_alessandria_hub(client, db_session):
         "items": [{"product_id": p_id, "colli": 40, "quantita": 400.0, "lotto": "LOTTO-BE-1"}]
     }, headers=admin_headers)
     assert ddt_res.status_code == 201
-    ddt_id = ddt_res.get_json()['id']
+    ddt_id = ddt_res.json()['id']
 
     # Generate CMR from DDT
     cmr_res = client.post(f'/api/cmr/from-ddt/{ddt_id}', headers=admin_headers)
     assert cmr_res.status_code == 201
-    cmr_data = cmr_res.get_json()
+    cmr_data = cmr_res.json()
 
     assert cmr_data['numero_completo'] == f"CMR-{date.today().year}-0001"
     assert cmr_data['cliente_id'] == d_id
@@ -98,7 +98,7 @@ def test_cmr_21_rows_rule_and_attachment_flag(client, db_session):
         "items": items_25
     }, headers=admin_headers)
     assert cmr_res.status_code == 201
-    cmr_data = cmr_res.get_json()
+    cmr_data = cmr_res.json()
 
     assert len(cmr_data['items']) == 25
     assert cmr_data['ha_allegato_righe'] is True
@@ -119,11 +119,11 @@ def test_cmr_print_format_boxes(client, db_session):
         "targa_rimorchio": "EF456GH",
         "items": [{"natura_merce": "Vino Bio", "numero_colli": 10, "peso_netto_kg": 60.0, "peso_lordo_kg": 65.0}]
     }, headers=admin_headers)
-    cmr_id = res.get_json()['id']
+    cmr_id = res.json()['id']
 
     print_res = client.get(f'/api/cmr/{cmr_id}/print', headers=admin_headers)
     assert print_res.status_code == 200
-    boxes = print_res.get_json()
+    boxes = print_res.json()
 
     assert "casella_1_mittente" in boxes
     assert "casella_2_destinatario" in boxes

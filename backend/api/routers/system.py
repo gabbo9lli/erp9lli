@@ -29,7 +29,7 @@ def get_enabled_modules():
 def health(db: Session = Depends(get_db)):
     health_status = {
         "status": "UP",
-        "flask_status": "UP",
+        "fastapi_status": "UP",
         "database": {
             "status": "DOWN",
             "type": os.environ.get('DB_TYPE', 'unknown'),

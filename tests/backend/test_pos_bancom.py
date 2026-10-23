@@ -152,7 +152,7 @@ def test_api_create_pos_sale_with_fefo_and_accounting(client, db_session):
 
     res = client.post('/api/pos/sales', json=payload, headers=admin_headers)
     assert res.status_code == 201
-    data = res.get_json()
+    data = res.json()
     assert data["totale_lordo"] == 7.50
     assert data["importo_resto"] == 12.50
     assert data["numero_scontrino"].startswith("SC-")
@@ -202,4 +202,4 @@ def test_api_pos_sale_insufficient_payment_rejected(client, db_session):
 
     res = client.post('/api/pos/sales', json=payload, headers=admin_headers)
     assert res.status_code == 400
-    assert "insufficiente" in res.get_json()["error"].lower()
+    assert "insufficiente" in res.json()["error"].lower()

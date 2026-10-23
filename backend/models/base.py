@@ -19,6 +19,6 @@ class Base(DeclarativeBase):
     @declared_attr.directive
     def __tablename__(cls) -> str:
         # Trasforma CamelCase in snake_case (es: CustomerOrder -> customer_order)
-        # Gestisce sequenze di maiuscole e numeri come faceva Flask-SQLAlchemy
+        # Convenzione standard di denominazione tabelle relazionali
         s1 = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', cls.__name__)
         return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1).lower()

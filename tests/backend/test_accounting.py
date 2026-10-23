@@ -49,7 +49,7 @@ def test_unbalanced_entry_rejected(client, db_session):
     }
     res = client.post('/api/accounting/entries', json=payload, headers=admin_headers)
     assert res.status_code == 400
-    assert "sbilanciata" in res.get_json()['error'].lower()
+    assert "sbilanciata" in res.json()['error'].lower()
 
 def test_balanced_entry_creation(client, db_session):
     admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
@@ -69,7 +69,7 @@ def test_balanced_entry_creation(client, db_session):
     }
     res = client.post('/api/accounting/entries', json=payload, headers=admin_headers)
     assert res.status_code == 201
-    data = res.get_json()
+    data = res.json()
     assert data['numero_completo'] == f"PN-{date.today().year}-0001"
     assert data['totale_dare'] == 150.0
     assert data['totale_avere'] == 150.0
@@ -94,7 +94,7 @@ def test_libro_giornale_report_json_and_csv(client, db_session):
     # JSON report
     res_json = client.get('/api/accounting/reports/libro-giornale', headers=admin_headers)
     assert res_json.status_code == 200
-    report_data = res_json.get_json()
+    report_data = res_json.json()
     assert 'righe' in report_data
     assert report_data['totale_dare'] >= 150.0
     assert report_data['totale_avere'] == report_data['totale_dare']
@@ -103,7 +103,7 @@ def test_libro_giornale_report_json_and_csv(client, db_session):
     res_csv = client.get('/api/accounting/reports/libro-giornale?format=csv', headers=admin_headers)
     assert res_csv.status_code == 200
     assert 'text/csv' in res_csv.headers['Content-Type']
-    csv_text = res_csv.data.decode('utf-8')
+    csv_text = res_csv.content.decode('utf-8')
     assert "Data;Numero;Causale;Codice;Conto;Partner;Dare;Avere" in csv_text
 
 def test_mastro_running_balance(client, db_session):
@@ -126,7 +126,7 @@ def test_mastro_running_balance(client, db_session):
 
     res = client.get(f'/api/accounting/reports/mastro?account_id={b_id}', headers=admin_headers)
     assert res.status_code == 200
-    data = res.get_json()
+    data = res.json()
     assert data['conto']['codice'] == "1002"
     assert len(data['movimenti']) > 0
     assert data['saldo_finale'] >= 200.0
@@ -155,7 +155,7 @@ def test_bilancio_di_verifica_balance(client, db_session):
 
     res = client.get('/api/accounting/reports/bilancio-verifica', headers=admin_headers)
     assert res.status_code == 200
-    data = res.get_json()
+    data = res.json()
     assert 'conti' in data
     assert round(data['totale_dare'], 2) == round(data['totale_avere'], 2)
 

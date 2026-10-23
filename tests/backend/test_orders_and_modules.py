@@ -5,7 +5,7 @@ from models import Partner, Product, CustomerOrder, OrderItem
 def test_get_modules_endpoint(client, db_session):
     res = client.get('/api/modules')
     assert res.status_code == 200
-    data = res.get_json()
+    data = res.json()
     assert "anagrafiche" in data
     assert "orders" in data
     assert "delivery_notes" in data
@@ -69,7 +69,7 @@ def test_create_order_with_step5_sequences(client, db_session):
     }
     res = client.post('/api/orders', json=payload, headers=admin_headers)
     assert res.status_code == 201
-    data = res.get_json()
+    data = res.json()
 
     assert data['numero_completo'] == f"ORD-{date.today().year}-0001"
     assert data['stato'] == "aperto"
@@ -94,7 +94,7 @@ def test_order_partial_and_full_fulfillment_to_ddt(client, db_session):
         "cliente_id": c_id,
         "items": [{"product_id": p_id, "colli_ordinati": 10, "quantita_ordinata": 100.0, "prezzo_unitario": 1.8}]
     }, headers=admin_headers)
-    order_data = order_res.get_json()
+    order_data = order_res.json()
     order_id = order_data['id']
     item_id = order_data['items'][0]['id']
 
@@ -104,7 +104,7 @@ def test_order_partial_and_full_fulfillment_to_ddt(client, db_session):
     }
     ful_res1 = client.post(f'/api/orders/{order_id}/fulfill-to-ddt', json=partial_payload, headers=admin_headers)
     assert ful_res1.status_code == 201
-    ful_data1 = ful_res1.get_json()
+    ful_data1 = ful_res1.json()
 
     assert "ddt" in ful_data1
     assert "order" in ful_data1
@@ -119,7 +119,7 @@ def test_order_partial_and_full_fulfillment_to_ddt(client, db_session):
     }
     ful_res2 = client.post(f'/api/orders/{order_id}/fulfill-to-ddt', json=full_payload, headers=admin_headers)
     assert ful_res2.status_code == 201
-    ful_data2 = ful_res2.get_json()
+    ful_data2 = ful_res2.json()
 
     assert ful_data2['order']['stato'] == "chiuso"
     assert ful_data2['order']['items'][0]['quantita_consegnata'] == 100.0

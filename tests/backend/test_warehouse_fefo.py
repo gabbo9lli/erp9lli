@@ -54,7 +54,7 @@ def test_create_purchase_validation_lotto_bio(client, db_session):
         "items": [{"product_id": p_id, "colli": 10, "quantita": 100.0, "data_scadenza": "2026-11-20"}]
     }, headers=admin_headers)
     assert res_err1.status_code == 400
-    assert "lotto" in res_err1.get_json()['error'].lower()
+    assert "lotto" in res_err1.json()['error'].lower()
 
     # 2. Missing data_scadenza -> should return 400
     res_err2 = client.post('/api/purchases', json={
@@ -63,7 +63,7 @@ def test_create_purchase_validation_lotto_bio(client, db_session):
         "items": [{"product_id": p_id, "colli": 10, "quantita": 100.0, "lotto": "LOTTO-TEST"}]
     }, headers=admin_headers)
     assert res_err2.status_code == 400
-    assert "scadenza" in res_err2.get_json()['error'].lower()
+    assert "scadenza" in res_err2.json()['error'].lower()
 
     # 3. Valid purchase -> should return 201
     res_ok = client.post('/api/purchases', json={
@@ -72,7 +72,7 @@ def test_create_purchase_validation_lotto_bio(client, db_session):
         "items": [{"product_id": p_id, "colli": 10, "quantita": 100.0, "prezzo_unitario": 1.5, "lotto": "LOTTO-TEST", "data_scadenza": "2026-11-20"}]
     }, headers=admin_headers)
     assert res_ok.status_code == 201
-    data = res_ok.get_json()
+    data = res_ok.json()
     assert data['numero_documento_fornitore'] == "DDT-001/F"
     assert len(data['items']) == 1
 
@@ -104,7 +104,7 @@ def test_stock_running_calculation(client, db_session):
     # 3. Check stock endpoint: giacenza deve essere esattamente 70 Kg
     stock_res = client.get('/api/warehouse/stock', headers=admin_headers)
     assert stock_res.status_code == 200
-    stocks = stock_res.get_json()
+    stocks = stock_res.json()
     kiwi_stock = next((s for s in stocks if s['product_id'] == p_id and s['lotto'] == "LOTTO-KIWI-1"), None)
     assert kiwi_stock is not None
     assert kiwi_stock['giacenza_kg'] == 70.0
@@ -137,7 +137,7 @@ def test_fefo_suggestion_ordering(client, db_session):
     # Richiesta suggerimento FEFO
     fefo_res = client.get(f'/api/warehouse/fefo-suggestions?product_id={p_id}', headers=admin_headers)
     assert fefo_res.status_code == 200
-    suggestions = fefo_res.get_json()
+    suggestions = fefo_res.json()
 
     assert len(suggestions) == 2
     # Primo suggerimento deve essere LOTTO-VICINO (10/11/2026)

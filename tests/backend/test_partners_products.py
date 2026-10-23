@@ -52,18 +52,18 @@ def test_api_partners_crud(client, db_session):
     }
     create_res = client.post('/api/partners', json=partner_data, headers=admin_headers)
     assert create_res.status_code == 201
-    created_id = create_res.get_json()['id']
+    created_id = create_res.json()['id']
 
     # 2. Get Partners with filter
     list_res = client.get('/api/partners?tipo=cliente', headers=admin_headers)
     assert list_res.status_code == 200
-    partners = list_res.get_json()
+    partners = list_res.json()
     assert any(p['ragione_sociale'] == "BioMarket Srl" for p in partners)
 
     # 3. Update Partner
     update_res = client.put(f'/api/partners/{created_id}', json={"citta": "Modena", "provincia": "MO"}, headers=admin_headers)
     assert update_res.status_code == 200
-    assert update_res.get_json()['citta'] == "Modena"
+    assert update_res.json()['citta'] == "Modena"
 
     # 4. Delete / Deactivate Partner
     del_res = client.delete(f'/api/partners/{created_id}', headers=admin_headers)
@@ -90,23 +90,23 @@ def test_api_products_crud(client, db_session):
     }
     create_res = client.post('/api/products', json=product_data, headers=admin_headers)
     assert create_res.status_code == 201
-    created_id = create_res.get_json()['id']
+    created_id = create_res.json()['id']
 
     # 2. Duplicate code rejected
     dup_res = client.post('/api/products', json=product_data, headers=admin_headers)
     assert dup_res.status_code == 400
-    assert "already exists" in dup_res.get_json()['error']
+    assert "already exists" in dup_res.json()['error']
 
     # 3. Get Products with filter
     list_res = client.get('/api/products?categoria=fresco', headers=admin_headers)
     assert list_res.status_code == 200
-    products = list_res.get_json()
+    products = list_res.json()
     assert any(p['codice'] == "BIO-KIWI-01" for p in products)
 
     # 4. Update Product
     update_res = client.put(f'/api/products/{created_id}', json={"prezzo_vendita": 4.20}, headers=admin_headers)
     assert update_res.status_code == 200
-    assert update_res.get_json()['prezzo_vendita'] == 4.20
+    assert update_res.json()['prezzo_vendita'] == 4.20
 
     # 5. Delete Product
     del_res = client.delete(f'/api/products/{created_id}', headers=admin_headers)

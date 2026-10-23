@@ -11,7 +11,6 @@ os.environ["DB_TYPE"] = "sqlite"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import pytest
-import httpx
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -21,11 +20,6 @@ from main import app as fastapi_app
 from database import get_db
 from models import Base
 import database
-
-# Monkey patch httpx Response per offrire get_json(), content_type e data
-httpx.Response.get_json = lambda self: self.json()
-httpx.Response.content_type = property(lambda self: self.headers.get("content-type", ""))
-httpx.Response.data = property(lambda self: self.content)
 
 test_engine = create_engine(
     "sqlite:///:memory:",

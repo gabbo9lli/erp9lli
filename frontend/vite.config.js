@@ -22,7 +22,7 @@ export default defineConfig({
     // 3. The Proxy: This solves the "localhost:5000" vs "backend:5000" problem
     proxy: {
       '/api': {
-        target: 'http://backend:5000', // Use the Docker service name of your Flask app
+        target: 'http://backend:5000', // Use the Docker service name of the FastAPI app
         changeOrigin: true,
         secure: false,
         ws: true

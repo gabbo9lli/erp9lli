@@ -158,7 +158,7 @@ Il sistema copre l'intero ciclo operativo: dalla ricezione ordini multicanale (d
 
 ### Avvio in Ambiente di Sviluppo
 ```bash
-# Avvio di tutti i container (PostgreSQL, Redis, Flask API, Vite Dev Server)
+# Avvio di tutti i container (PostgreSQL, Redis, FastAPI Backend, Vite Dev Server)
 docker compose -f docker-compose.yaml -f docker-compose.override.yaml up --build -d
 
 # Visualizzazione log
