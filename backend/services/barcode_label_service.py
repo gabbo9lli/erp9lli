@@ -251,3 +251,54 @@ class BarcodeLabelService:
     {svg}
   </div>
 </div>"""
+
+    @classmethod
+    def generate_label(
+        cls,
+        sku: str,
+        description: str,
+        lot: str,
+        expiry_date: str = None,
+        quantity: float = 1.0,
+        weight_net: float = 0.0,
+        unit: str = "KG",
+        document_ref: str = "",
+        recipient_name: str = "",
+        layout: str = "pallet"
+    ) -> dict:
+        layout_str = (layout or "pallet").lower()
+        data = {
+            "descrizione": description or "Articolo Bio",
+            "codice_articolo": sku or "ART-BIO",
+            "lotto": lot or "L-00",
+            "data_scadenza": expiry_date,
+            "colli": int(quantity or 1),
+            "peso_netto": float(weight_net or quantity or 0.0),
+            "peso_lordo": float(weight_net or quantity or 0.0) + (25.0 if layout_str == "pallet" else 0.5),
+            "tara": 25.0 if layout_str == "pallet" else 0.5,
+            "origine": "Italia",
+            "ente_certificatore": "IT-BIO-009 CCPB",
+            "documento_rif": document_ref,
+            "destinatario": recipient_name
+        }
+        barcode_val = f"{data['codice_articolo']}-{data['lotto']}".replace(" ", "")
+
+        if layout_str == "pallet":
+            zpl = cls.generate_pallet_zpl(data)
+            html = cls.render_pallet_html(data)
+            svg = cls.generate_code128_svg(barcode_val, height=60, bar_width=2)
+        else:
+            zpl = cls.generate_collo_zpl(data)
+            html = cls.render_collo_html(data)
+            svg = cls.generate_code128_svg(barcode_val, height=35, bar_width=1)
+
+        return {
+            "sku": sku,
+            "lot": lot,
+            "label_type": layout_str,
+            "barcode_value": barcode_val,
+            "zpl": zpl,
+            "svg_barcode": svg,
+            "html_preview": html,
+            "dati": data
+        }

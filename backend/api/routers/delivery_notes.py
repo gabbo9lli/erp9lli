@@ -7,6 +7,7 @@ from api.deps import require_auth
 from schemas.delivery_note import DeliveryNoteResponse
 from services.delivery_note_service import DeliveryNoteService
 from services.barcode_label_service import BarcodeLabelService
+from services.event_dispatcher import dispatch_event
 
 router = APIRouter(prefix="/api/delivery-notes", tags=["DeliveryNotes"])
 
@@ -120,5 +121,20 @@ def get_delivery_note_labels(
             layout=type
         )
         labels.append(lbl)
+
+    try:
+        dispatch_event(
+            azione="stampa_etichette_barcode",
+            titolo=f"Stampa Etichette DDT {ddt.numero_completo}",
+            descrizione=f"Generate {len(labels)} etichette barcode per DDT {ddt.numero_completo}",
+            channel_code="AUDIT",
+            category_code="LOGISTICA",
+            entita_tipo="delivery_note",
+            entita_id=ddt.id,
+            partner_id=ddt.cliente_id,
+            db=db
+        )
+    except Exception:
+        pass
 
     return {"ddt_id": ddt.id, "count": len(labels), "labels": labels}
