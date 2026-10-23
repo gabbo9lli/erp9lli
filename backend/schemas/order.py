@@ -3,6 +3,7 @@ from datetime import date
 from pydantic import BaseModel, ConfigDict
 from schemas.partner import PartnerResponse
 from schemas.product import ProductResponse
+from schemas.delivery_note import DeliveryNoteResponse
 
 class OrderItemBase(BaseModel):
     product_id: Optional[int] = None
@@ -46,3 +47,9 @@ class OrderResponse(OrderBase):
     items: List[OrderItemResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+class OrderFulfillResponse(BaseModel):
+    message: str
+    ddt: DeliveryNoteResponse
+    order: OrderResponse
+
