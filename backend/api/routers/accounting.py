@@ -11,6 +11,7 @@ from models import Account, JournalEntry, JournalItem, AccountingCausal, Partner
 from api.deps import require_auth
 from seed_accounting import seed_default_accounting_causals, seed_chart_of_accounts
 from schemas.accounting import AccountResponse, AccountingCausalResponse, JournalEntryResponse
+from services.accounting_service import AccountingService
 
 router = APIRouter(prefix="/api/accounting", tags=["Accounting"])
 

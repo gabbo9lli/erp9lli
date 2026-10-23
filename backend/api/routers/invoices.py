@@ -56,10 +56,7 @@ async def create_invoice_from_ddt(
     db: Session = Depends(get_db)
 ):
     data = await request.json()
-    ddt_id = data.get('delivery_note_id')
-    if not ddt_id:
-        raise HTTPException(status_code=400, detail="delivery_note_id is required")
-    return InvoiceService.create_invoice_from_ddt(db, ddt_id)
+    return InvoiceService.create_invoice_from_ddt(db, data)
 
 @router.post("/invoices", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_invoice_direct(
