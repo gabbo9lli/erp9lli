@@ -6,12 +6,13 @@ from database import get_db
 from models import EcommerceSyncLog, User
 from api.deps import require_auth
 from services.ecommerce_service import EcommerceService
+from core.config import settings
 
 router = APIRouter(prefix="/api/ecommerce", tags=["E-Commerce"])
 
 @router.post("/webhook/orders")
 async def handle_ecommerce_order_webhook(request: Request, db: Session = Depends(get_db)):
-    expected_secret = os.getenv("ECOMMERCE_WEBHOOK_SECRET", "spree-secret-token")
+    expected_secret = settings.ECOMMERCE_WEBHOOK_SECRET
     provided_secret = request.headers.get("X-Ecommerce-Secret")
     auth_email = request.headers.get("X-Forwarded-Email")
 

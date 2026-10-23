@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from database import get_db, engine
 from api.deps import require_auth
 from models import User
+from core.config import settings
 
 router = APIRouter(prefix="/api", tags=["System"])
 
@@ -14,16 +15,9 @@ AVAILABLE_MODULES = [
     "accounting", "warehouse", "pallets", "cmr", "pos", "ecommerce"
 ]
 
-def is_module_enabled(module_name: str) -> bool:
-    enabled = os.getenv('ENABLED_MODULES', 'all').strip().lower()
-    if enabled == 'all' or not enabled:
-        return True
-    active_set = {m.strip().lower() for m in enabled.split(',')}
-    return module_name.lower() in active_set
-
 @router.get("/modules")
 def get_enabled_modules():
-    return {mod: is_module_enabled(mod) for mod in AVAILABLE_MODULES}
+    return {mod: settings.is_module_enabled(mod) for mod in AVAILABLE_MODULES}
 
 @router.get("/health")
 def health(db: Session = Depends(get_db)):
@@ -32,7 +26,7 @@ def health(db: Session = Depends(get_db)):
         "fastapi_status": "UP",
         "database": {
             "status": "DOWN",
-            "type": os.environ.get('DB_TYPE', 'unknown'),
+            "type": settings.DB_TYPE,
             "connection_error": None
         }
     }

@@ -1,15 +1,14 @@
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from core.config import settings
 
-DB_TYPE = os.environ.get('DB_TYPE', 'sqlite')
-if DB_TYPE in ('postgres', 'postgresql'):
-    db_url = os.environ.get('DATABASE_URL', '')
+if settings.DB_TYPE in ('postgres', 'postgresql'):
+    db_url = settings.DATABASE_URL
     if db_url.startswith('postgresql://') and not db_url.startswith('postgresql+'):
         db_url = db_url.replace('postgresql://', 'postgresql+psycopg2://', 1)
     SQLALCHEMY_DATABASE_URL = db_url
 else:
-    SQLALCHEMY_DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///./site.db')
+    SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
 connect_args = {}
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):

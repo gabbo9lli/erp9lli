@@ -7,6 +7,7 @@ from rq import Queue
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import EventChannel, EventCategory, EventType, SystemEvent
+from core.config import settings
 
 executor = ThreadPoolExecutor(max_workers=4)
 
@@ -86,12 +87,10 @@ def seed_default_event_types(db: Session):
         pass
 
 def get_redis_connection():
-    if os.getenv("TESTING", "0").lower() in ("1", "true"):
+    if settings.is_testing:
         return None
     try:
-        redis_host = os.getenv("REDIS_HOST", "redis")
-        redis_port = int(os.getenv("REDIS_PORT", 6379))
-        conn = Redis(host=redis_host, port=redis_port, socket_timeout=0.3)
+        conn = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, socket_timeout=0.3)
         conn.ping()
         return conn
     except Exception:
@@ -128,8 +127,7 @@ def _run_async_event(event_id: int, target_func=None, db: Session = None):
                 event.progresso = 100
 
             if event.channel and event.channel.tipo_dispatcher == 'smtp':
-                smtp_enabled = os.getenv('SMTP_ENABLED', 'false').lower() == 'true'
-                if not smtp_enabled:
+                if not settings.SMTP_ENABLED:
                     event.stato = 'test'
                     event.note_esito = "Evento archiviato in modalità test. Nessuna spedizione esterna eseguita."
                 else:
@@ -229,7 +227,7 @@ def dispatch_event(
     db.commit()
 
     if is_async:
-        is_testing = os.getenv("TESTING", "0").lower() in ("1", "true")
+        is_testing = settings.is_testing
 
         redis_conn = get_redis_connection()
         if redis_conn and not is_testing:
@@ -263,8 +261,7 @@ def dispatch_event(
         return event
     else:
         if ch and ch.tipo_dispatcher == 'smtp':
-            smtp_enabled = os.getenv('SMTP_ENABLED', 'false').lower() == 'true'
-            if not smtp_enabled:
+            if not settings.SMTP_ENABLED:
                 event.stato = 'test'
                 event.note_esito = "Evento archiviato in modalità test. Nessuna spedizione esterna eseguita."
             else:

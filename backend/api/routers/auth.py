@@ -8,18 +8,18 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from models import User
+from core.config import settings
 
 router = APIRouter(prefix="/api", tags=["Auth"])
 
 EMAIL_REGEX = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
 
 def create_access_token(identity: str) -> str:
     payload = {
         "sub": identity,
         "exp": datetime.utcnow() + timedelta(hours=24)
     }
-    return jwt.encode(payload, JWT_SECRET_KEY, algorithm="HS256")
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm="HS256")
 
 def get_request_identity(request: Request):
     email = request.headers.get('X-Forwarded-Email')
@@ -27,13 +27,10 @@ def get_request_identity(request: Request):
     groups_header = request.headers.get('X-Forwarded-Groups', '')
     groups = [g.strip() for g in groups_header.split(',') if g.strip()]
 
-    is_dev = os.environ.get('APP_ENV') == 'development'
-    is_testing = os.environ.get('TESTING', '0').lower() in ('1', 'true')
-
-    if not email and is_dev and not is_testing:
-        email = os.environ.get('DEV_AUTH_USER', 'dev@example.com')
+    if not email and settings.is_dev and not settings.is_testing:
+        email = settings.DEV_AUTH_USER
         username = username or 'dev'
-        groups = [os.environ.get('DEV_AUTH_ROLE', 'Admin')]
+        groups = [settings.DEV_AUTH_ROLE]
 
     return email, username, groups
 

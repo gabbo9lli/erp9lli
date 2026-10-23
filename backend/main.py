@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import engine
 from models import Base
 from api.websocket_manager import manager
+from core.config import settings
 from api.routers import (
     auth, system, partners, products, ecommerce,
     orders, delivery_notes, warehouse, invoices,
@@ -16,9 +17,10 @@ from api.routers import (
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="ERP9lli API",
+    title=settings.APP_NAME,
     description="Gestionale Integrato Filiera Ortofrutticola Biologica (ReteBio)",
-    version="2.0.0"
+    version="2.0.0",
+    debug=settings.APP_DEBUG
 )
 
 # Handler globale per eccezioni HTTP: garantisce standard detail ed error
