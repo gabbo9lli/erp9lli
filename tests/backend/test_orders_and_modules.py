@@ -125,3 +125,26 @@ def test_order_partial_and_full_fulfillment_to_ddt(client, db_session):
     assert ful_data2['order']['items'][0]['quantita_consegnata'] == 100.0
     assert ful_data2['order']['items'][0]['quantita_residua'] == 0.0
     assert ful_data2['order']['items'][0]['stato'] == "chiuso"
+
+def test_order_service_direct_fulfillment_dispatches_event(db_session):
+    from services.order_service import OrderService
+    from models import Partner, Product, SystemEvent
+
+    cli = Partner(ragione_sociale="Cliente Event Test", tipo="cliente")
+    prod = Product(codice="EVT-01", descrizione="Prodotto Evento", prezzo_vendita=5.0)
+    db_session.add_all([cli, prod])
+    db_session.commit()
+
+    order = OrderService.create_order(db_session, {
+        "cliente_id": cli.id,
+        "items": [{"product_id": prod.id, "colli_ordinati": 2, "quantita_ordinata": 20.0, "prezzo_unitario": 5.0}]
+    })
+
+    ddt, updated_order = OrderService.fulfill_to_ddt(db_session, order.id, {})
+    assert ddt is not None
+    assert updated_order.stato == "chiuso"
+
+    ev = db_session.query(SystemEvent).filter_by(entita_tipo="order", entita_id=order.id).first()
+    assert ev is not None
+    assert ev.azione == "evasione_ordine"
+

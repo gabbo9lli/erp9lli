@@ -73,23 +73,6 @@ async def fulfill_order_to_ddt(
 ):
     data = await request.json()
     ddt, order = OrderService.fulfill_to_ddt(db, oid, data)
-    
-    try:
-        from services.event_dispatcher import dispatch_event
-        dispatch_event(
-            db=db,
-            azione="evasione_ordine",
-            titolo=f"Evasione Ordine {order.numero_completo}",
-            descrizione=f"Creato {ddt.numero_completo} da ordine {order.numero_completo}",
-            channel_code="AUDIT",
-            category_code="LOGISTICA",
-            entita_tipo="order",
-            entita_id=order.id,
-            partner_id=order.cliente_id
-        )
-    except Exception:
-        pass
-
     return {
         "message": "Ordine parzialmente o totalmente evaso a DDT",
         "ddt": ddt,

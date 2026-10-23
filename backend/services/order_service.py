@@ -204,4 +204,20 @@ class OrderService:
         db.commit()
         db.refresh(order)
         db.refresh(ddt)
+
+        try:
+            dispatch_event(
+                db=db,
+                azione="evasione_ordine",
+                titolo=f"Evasione Ordine {order.numero_completo}",
+                descrizione=f"Creato {ddt.numero_completo} da ordine {order.numero_completo}",
+                channel_code="AUDIT",
+                category_code="LOGISTICA",
+                entita_tipo="order",
+                entita_id=order.id,
+                partner_id=order.cliente_id
+            )
+        except Exception:
+            pass
+
         return ddt, order
