@@ -10,12 +10,11 @@ RUN chmod +x entrypoint.sh
 
 # Development Stage
 FROM base AS development
-ENV FLASK_ENV=development
+ENV APP_ENV=development
 
 ENTRYPOINT ["./entrypoint.sh"]
 
 # Production Stage
 FROM base AS production
-RUN pip install gunicorn
-ENV FLASK_ENV=production
+ENV APP_ENV=production
 ENTRYPOINT ["./entrypoint.sh"]

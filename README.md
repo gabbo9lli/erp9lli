@@ -2,7 +2,7 @@
 
 [![Backend Tests](https://img.shields.io/badge/pytest-94%20passed-brightgreen.svg)](tests/backend/)
 [![Frontend Tests](https://img.shields.io/badge/vitest-25%20passed-brightgreen.svg)](tests/frontend/)
-[![Architecture](https://img.shields.io/badge/stack-Vue3%20%7C%20Flask%20%7C%20PostgreSQL%20%7C%20Redis-blue.svg)]()
+[![Architecture](https://img.shields.io/badge/stack-Vue3%20%7C%20FastAPI%20%7C%20PostgreSQL%20%7C%20Redis-blue.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-green.svg)]()
 
 **`erp9lli`** è una piattaforma ERP modulare containerizzata progettata per la gestione completa della supply chain, della logistica e della contabilità fiscale delle cooperative e aziende agricole ortofrutticole biologiche (aderenti agli standard di **ReteBio**).
@@ -22,8 +22,8 @@ Il sistema copre l'intero ciclo operativo: dalla ricezione ordini multicanale (d
                      ┌────────────────────────┴────────────────────────┐
                      ▼                                                 ▼
         ┌─────────────────────────┐                       ┌─────────────────────────┐
-        │   Frontend SPA (Vite)   │                       │   Backend API (Gevent)  │
-        │   Vue 3 + Quasar v2.16  │                       │   Flask + Flask-SocketIO│
+        │   Frontend SPA (Vite)   │                       │   Backend API (ASGI)    │
+        │   Vue 3 + Quasar v2.16  │                       │   FastAPI + Uvicorn     │
         │   Porta Host: 5173      │                       │   Porta Host: 5000      │
         └─────────────────────────┘                       └────────────┬────────────┘
                                                                        │
@@ -31,17 +31,18 @@ Il sistema copre l'intero ciclo operativo: dalla ricezione ordini multicanale (d
                                            ▼                           ▼                           ▼
                               ┌─────────────────────────┐ ┌─────────────────────────┐ ┌─────────────────────────┐
                               │  PostgreSQL 15 (RDBMS)  │ │   Redis 7 (Event Bus)   │ │  RQ Background Workers  │
-                              │  25 Modelli Normalizzati│ │   4 Code Multiple (RQ)  │ │ critical | emails       │
+                              │  29 Modelli Normalizzati│ │   4 Code Multiple (RQ)  │ │ critical | emails       │
                               │  Porta Host: 5432       │ │   Porta Host: 6379      │ │ batch    | default      │
                               └─────────────────────────┘ └─────────────────────────┘ └─────────────────────────┘
 ```
 
 ### Componenti Chiave
 - **Frontend SPA:** Vue 3 (Composition API, `<script setup>`), Quasar Framework 2.16, Pinia, Axios, Vitest.
-- **Backend API:** Python 3.11, Flask con monkey patching Gevent, SQLAlchemy 2, Alembic (Flask-Migrate), Pytest.
+- **Backend API:** Python 3.11, FastAPI con Uvicorn, Dependency Injection (`Depends(get_db)`), validazione Pydantic v2, SQLAlchemy 2.0 (DeclarativeBase), Alembic, Pytest.
 - **Database Relazionale:** PostgreSQL 15 con modelli disaccoppiati in `backend/models/` (un file per tabella).
 - **Asincronismo & Code Multiple:** Redis 7 alpine + Redis Queue (RQ) con catalogo dichiarativo degli eventi.
-- **Sicurezza:** Decoratore `@require_auth(roles=None)` basato su header federati (`X-Forwarded-Email`, `X-Forwarded-Groups`) con fallback locale trasparente in ambiente di sviluppo.
+- **WebSockets:** WebSockets nativi asincroni di FastAPI (`/ws`).
+- **Sicurezza:** Decoratore e dependency `require_auth(roles=None)` basati su header federati (`X-Forwarded-Email`, `X-Forwarded-Groups`) con fallback locale trasparente in ambiente di sviluppo.
 
 ---
 
@@ -172,7 +173,7 @@ docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up --build -d
 ### Inizializzazione Database & Seed
 ```bash
 # Esecuzione migrazioni Alembic
-docker compose exec backend flask db upgrade
+docker compose exec backend alembic upgrade head
 
 # Caricamento causali contabili operative standard CEE
 docker compose exec backend python seed_accounting.py
@@ -187,7 +188,7 @@ docker compose exec backend python seed_retebio.py
 
 Il progetto è stato sviluppato con metodologia **Test-Driven Development (TDD)** rigorosa.
 
-### Test Backend (Pytest)
+### Test Backend (Pytest con FastAPI TestClient)
 ```bash
 # Esecuzione completa di tutti i 94 test backend
 uv run --with-requirements backend/requirements.txt pytest tests/backend -v
@@ -211,7 +212,7 @@ npm --prefix frontend run build
 | Servizio | Porta Host | Protocollo / Endpoint | Descrizione |
 | :--- | :--- | :--- | :--- |
 | **Frontend UI** | `5173` | `http://localhost:5173/` | Interfaccia Quasar Vue 3 (Vite HMR) |
-| **Backend API** | `5000` | `http://localhost:5000/api/` | Flask Gevent REST & WebSockets |
+| **Backend API** | `5000` | `http://localhost:5000/api/` | FastAPI Uvicorn REST & WebSockets (/ws) |
 | **PostgreSQL** | `5432` | `postgresql://gabbo:gabbino@localhost:5432/erp9lli_dev` | RDBMS Relazionale |
 | **Redis** | `6379` | `redis://localhost:6379/0` | Event Bus & Code RQ |
 

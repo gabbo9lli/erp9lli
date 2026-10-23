@@ -23,15 +23,24 @@ from models import Base, db as models_db
 
 # Monkey patch httpx Response per offrire get_json() come Flask Response
 httpx.Response.get_json = lambda self: self.json()
+httpx.Response.content_type = property(lambda self: self.headers.get("content-type", ""))
+httpx.Response.data = property(lambda self: self.content)
 
+import database
 test_engine = create_engine(
     "sqlite:///:memory:",
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=test_engine)
 
 _current_test_session = None
+
+# Patch database.SessionLocal in conftest per restituire la sessione attiva
+def get_test_session_or_new():
+    return _current_test_session if _current_test_session is not None else TestingSessionLocal()
+
+database.SessionLocal = get_test_session_or_new
 
 # Collega property .query a Base per compatibilità retroattiva nei test
 class CurrentQueryProperty:

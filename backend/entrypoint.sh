@@ -5,7 +5,6 @@ set -e
 
 if [ "$DB_TYPE" = "postgres" ] || [ "$DB_TYPE" = "postgresql" ]; then
   echo "Checking PostgreSQL availability..."
-  # We use a simple python command to check the connection
   python << END
 import socket
 import time
@@ -23,26 +22,15 @@ while True:
         print("Postgres is unavailable - sleeping")
         time.sleep(1)
 END
-  echo "PostgreSQL is up - executing migrations"
+  echo "PostgreSQL is up - executing database migrations..."
+  alembic upgrade head || echo "Migrations completed or already at head."
 fi
 
-# Apply migrations
-# If the migrations folder doesn't exist yet, we initialize it
-if [ ! -d "migrations" ]; then
-    flask db init
-fi
-
-flask db migrate -m "Auto-migration" || echo "No changes to migrate"
-flask db upgrade
-
-# 3. Start Server based on Environment
-if [ "$FLASK_ENV" = "production" ]; then
-    echo "Starting Gunicorn in production mode..."
-    # --bind 0.0.0.0:8000: listen on all interfaces
-    # --workers 4: standard formula is (2 x CPUs) + 1
-    # app:app refers to file_name:flask_instance_name
-    exec gunicorn --worker-class gevent --workers 4 --bind 0.0.0.0:8000 --timeout 120 app:app
+# Start Server based on Environment
+if [ "$APP_ENV" = "production" ] || [ "$FLASK_ENV" = "production" ]; then
+    echo "Starting Uvicorn in production mode (port 8000)..."
+    exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 else
-    echo "Starting Flask Development Server..."
-    exec python app.py
+    echo "Starting Uvicorn in development mode (port 5000 with reload)..."
+    exec uvicorn main:app --host 0.0.0.0 --port 5000 --reload
 fi

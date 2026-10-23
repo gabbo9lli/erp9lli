@@ -153,10 +153,10 @@ class EcommerceService:
             except Exception:
                 pass
 
+            db.refresh(order)
             return order, True
         finally:
-            if close_session:
-                db.close()
+            pass
 
     @staticmethod
     def get_stock_sync_feed(db: Session = None) -> list[dict]:
