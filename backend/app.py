@@ -19,6 +19,7 @@ from flask_socketio import SocketIO, emit
 from services.sdi_service import generate_sdi_xml, validate_sdi_invoice
 from services.event_dispatcher import dispatch_event, seed_default_channels_and_categories, get_redis_connection
 from services.pos_driver_service import PosDriverService
+from services.barcode_label_service import BarcodeLabelService
 from seed_accounting import seed_default_accounting_causals
 
 app = Flask(__name__)
@@ -3406,7 +3407,169 @@ def print_pos_sale(sid):
         "stato_fiscale": ticket_res.get("stato_fiscale"),
         "ticket_ascii": ticket_res.get("ticket_ascii")
     }), 200
-    
+
+# ==========================================
+# MODULO STAMPA ETICHETTE BARCODE TERMICHE
+# ==========================================
+
+@app.route('/api/labels/generate', methods=['POST'])
+@require_auth()
+def generate_label():
+    data = request.get_json() or {}
+    label_type = (data.get('label_type') or 'pallet').lower()
+
+    codice = data.get('codice_articolo') or 'ART'
+    lotto = data.get('lotto') or '001'
+    barcode_val = f"{codice}-{lotto}".replace(" ", "")
+
+    if label_type == 'pallet':
+        zpl = BarcodeLabelService.generate_pallet_zpl(data)
+        html = BarcodeLabelService.render_pallet_html(data)
+        svg = BarcodeLabelService.generate_code128_svg(barcode_val, height=60, bar_width=2)
+    else:
+        zpl = BarcodeLabelService.generate_collo_zpl(data)
+        html = BarcodeLabelService.render_collo_html(data)
+        svg = BarcodeLabelService.generate_code128_svg(barcode_val, height=35, bar_width=1)
+
+    return jsonify({
+        "label_type": label_type,
+        "barcode_value": barcode_val,
+        "zpl": zpl,
+        "svg_barcode": svg,
+        "html_preview": html
+    }), 200
+
+@app.route('/api/delivery-notes/<int:did>/labels', methods=['GET'])
+@require_auth()
+def get_delivery_note_labels(did):
+    ddt = db.session.get(DeliveryNote, did)
+    if not ddt:
+        return jsonify({"error": "DDT non trovato"}), 404
+
+    label_type = (request.args.get('type') or 'pallet').lower()
+    labels = []
+
+    for item in ddt.items:
+        prod = item.product
+        data = {
+            "descrizione": item.descrizione or (prod.descrizione if prod else "Articolo Bio"),
+            "codice_articolo": prod.codice if prod else "ART-BIO",
+            "lotto": item.lotto or "LOTTO-DDT",
+            "data_scadenza": item.data_scadenza.isoformat() if item.data_scadenza else None,
+            "colli": item.colli or 1,
+            "peso_netto": float(item.quantita or 0.0),
+            "peso_lordo": float(item.quantita or 0.0) + 25.0,
+            "tara": 25.0,
+            "origine": "Italia",
+            "ente_certificatore": getattr(ddt.cliente, 'istituto_certificatore', None) or "IT-BIO-009 CCPB"
+        }
+        barcode_val = f"{data['codice_articolo']}-{data['lotto']}".replace(" ", "")
+
+        if label_type == 'pallet':
+            zpl = BarcodeLabelService.generate_pallet_zpl(data)
+            html = BarcodeLabelService.render_pallet_html(data)
+            svg = BarcodeLabelService.generate_code128_svg(barcode_val, height=60, bar_width=2)
+        else:
+            zpl = BarcodeLabelService.generate_collo_zpl(data)
+            html = BarcodeLabelService.render_collo_html(data)
+            svg = BarcodeLabelService.generate_code128_svg(barcode_val, height=35, bar_width=1)
+
+        labels.append({
+            "item_id": item.id,
+            "label_type": label_type,
+            "barcode_value": barcode_val,
+            "zpl": zpl,
+            "svg_barcode": svg,
+            "html_preview": html,
+            "dati": data
+        })
+
+    try:
+        dispatch_event(
+            azione="stampa_etichette_barcode",
+            titolo=f"Stampa Etichette DDT {ddt.numero_completo}",
+            descrizione=f"Generate {len(labels)} etichette barcode ({label_type}) per DDT {ddt.numero_completo}",
+            channel_code="AUDIT",
+            category_code="LOGISTICA",
+            entita_tipo="delivery_note",
+            entita_id=ddt.id,
+            partner_id=ddt.cliente_id
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        "delivery_note_id": ddt.id,
+        "numero_completo": ddt.numero_completo,
+        "count": len(labels),
+        "labels": labels
+    }), 200
+
+@app.route('/api/purchases/<int:pid>/labels', methods=['GET'])
+@require_auth()
+def get_purchase_labels(pid):
+    pnote = db.session.get(PurchaseDeliveryNote, pid)
+    if not pnote:
+        return jsonify({"error": "Bolla acquisto non trovata"}), 404
+
+    label_type = (request.args.get('type') or 'pallet').lower()
+    labels = []
+
+    for item in pnote.items:
+        prod = item.product
+        data = {
+            "descrizione": item.descrizione or (prod.descrizione if prod else "Articolo Bio"),
+            "codice_articolo": prod.codice if prod else "ART-BIO",
+            "lotto": item.lotto or "LOTTO-CARICO",
+            "data_scadenza": item.data_scadenza.isoformat() if item.data_scadenza else None,
+            "colli": item.colli or 1,
+            "peso_netto": float(item.quantita or 0.0),
+            "peso_lordo": float(item.quantita or 0.0) + 25.0,
+            "tara": 25.0,
+            "origine": "Italia",
+            "ente_certificatore": getattr(pnote.fornitore, 'istituto_certificatore', None) or "IT-BIO-009 CCPB"
+        }
+        barcode_val = f"{data['codice_articolo']}-{data['lotto']}".replace(" ", "")
+
+        if label_type == 'pallet':
+            zpl = BarcodeLabelService.generate_pallet_zpl(data)
+            html = BarcodeLabelService.render_pallet_html(data)
+            svg = BarcodeLabelService.generate_code128_svg(barcode_val, height=60, bar_width=2)
+        else:
+            zpl = BarcodeLabelService.generate_collo_zpl(data)
+            html = BarcodeLabelService.render_collo_html(data)
+            svg = BarcodeLabelService.generate_code128_svg(barcode_val, height=35, bar_width=1)
+
+        labels.append({
+            "item_id": item.id,
+            "label_type": label_type,
+            "barcode_value": barcode_val,
+            "zpl": zpl,
+            "svg_barcode": svg,
+            "html_preview": html,
+            "dati": data
+        })
+
+    try:
+        dispatch_event(
+            azione="stampa_etichette_barcode",
+            titolo=f"Stampa Etichette Carico {pnote.numero_documento_fornitore}",
+            descrizione=f"Generate {len(labels)} etichette carico fornitore ({label_type})",
+            channel_code="AUDIT",
+            category_code="LOGISTICA",
+            entita_tipo="purchase_delivery_note",
+            entita_id=pnote.id,
+            partner_id=pnote.fornitore_id
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        "purchase_id": pnote.id,
+        "count": len(labels),
+        "labels": labels
+    }), 200
+
 @socketio.on('connect')
 def handle_connect():
     print("Client connesso!")

@@ -93,6 +93,9 @@
 
       <template v-slot:body-cell-actions="props">
         <q-td :props="props" align="right">
+          <q-btn flat round dense color="teal" icon="qr_code_2" @click="openProductLabel(props.row)">
+            <q-tooltip>Stampa Etichetta Barcode</q-tooltip>
+          </q-btn>
           <q-btn flat round dense color="primary" icon="edit" @click="openDialog(props.row)" />
           <q-btn flat round dense color="negative" icon="delete" @click="confirmDelete(props.row)" />
         </q-td>
@@ -184,12 +187,38 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Dialog Etichetta Barcode Termica -->
+    <BarcodeLabelsDialog v-model="productLabelDialogOpen" :labels="productLabels" :title="productLabelTitle" />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
+import BarcodeLabelsDialog from './BarcodeLabelsDialog.vue'
+
+const productLabelDialogOpen = ref(false)
+const productLabels = ref([])
+const productLabelTitle = ref('')
+
+const openProductLabel = async (prod) => {
+  try {
+    const res = await axios.post('/api/labels/generate', {
+      label_type: 'collo',
+      descrizione: prod.descrizione,
+      codice_articolo: prod.codice,
+      lotto: 'LOTTO-SAMPLE',
+      data_scadenza: new Date().toISOString().split('T')[0],
+      peso_netto: Number(prod.peso_netto || 1.0)
+    })
+    productLabels.value = [res.data]
+    productLabelTitle.value = `Etichetta Prodotto ${prod.codice}`
+    productLabelDialogOpen.value = true
+  } catch (err) {
+    alert(err.response?.data?.error || 'Errore generazione etichetta')
+  }
+}
 
 const products = ref([])
 const loading = ref(false)

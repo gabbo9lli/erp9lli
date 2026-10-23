@@ -118,6 +118,15 @@
             @click="generateCmr(props.row)" 
             title="Emetti Lettera di Vettura CMR Export"
           />
+          <q-btn 
+            flat 
+            round 
+            dense 
+            color="teal" 
+            icon="qr_code_2" 
+            @click="openLabelsForDdt(props.row)" 
+            title="Stampa Etichette Barcode Bancale"
+          />
         </q-td>
       </template>
     </q-table>
@@ -336,12 +345,16 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Dialog Etichette Barcode Termiche -->
+    <BarcodeLabelsDialog v-model="labelsDialogOpen" :labels="currentDdtLabels" :title="labelsDialogTitle" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
+import BarcodeLabelsDialog from './BarcodeLabelsDialog.vue'
 
 const ddts = ref([])
 const partners = ref([])
@@ -351,6 +364,21 @@ const saving = ref(false)
 const editorOpen = ref(false)
 const statusFilter = ref('tutti')
 const searchTerm = ref('')
+
+const labelsDialogOpen = ref(false)
+const currentDdtLabels = ref([])
+const labelsDialogTitle = ref('')
+
+const openLabelsForDdt = async (ddt) => {
+  try {
+    const res = await axios.get(`/api/delivery-notes/${ddt.id}/labels?type=pallet`)
+    currentDdtLabels.value = res.data.labels || []
+    labelsDialogTitle.value = `Etichette Bancale DDT ${ddt.numero_completo}`
+    labelsDialogOpen.value = true
+  } catch (err) {
+    alert(err.response?.data?.error || 'Errore caricamento etichette')
+  }
+}
 
 const defaultForm = () => ({
   id: null,
