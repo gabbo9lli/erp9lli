@@ -1,8 +1,9 @@
 import sys
 import os
 
-from app import app
-from models import db, Partner, Product
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from models import Partner, Product
 
 PARTNERS_DATA = [
     # --- CLIENTI (Canale Specializzato Bio e GDO) ---
@@ -322,33 +323,42 @@ PRODUCTS_DATA = [
     }
 ]
 
-def seed_data():
-    added_partners = 0
-    added_products = 0
+def seed_data(db: Session = None):
+    close_session = False
+    if db is None:
+        db = SessionLocal()
+        close_session = True
 
-    # 1. Popola i Partner
-    for p_data in PARTNERS_DATA:
-        existing = Partner.query.filter_by(ragione_sociale=p_data["ragione_sociale"]).first()
-        if not existing:
-            partner = Partner(**p_data)
-            db.session.add(partner)
-            added_partners += 1
+    try:
+        added_partners = 0
+        added_products = 0
 
-    # 2. Popola i Prodotti
-    for prod_data in PRODUCTS_DATA:
-        existing = Product.query.filter_by(codice=prod_data["codice"]).first()
-        if not existing:
-            product = Product(**prod_data)
-            db.session.add(product)
-            added_products += 1
+        # 1. Popola i Partner
+        for p_data in PARTNERS_DATA:
+            existing = db.query(Partner).filter_by(ragione_sociale=p_data["ragione_sociale"]).first()
+            if not existing:
+                partner = Partner(**p_data)
+                db.add(partner)
+                added_partners += 1
 
-    if added_partners > 0 or added_products > 0:
-        db.session.commit()
+        # 2. Popola i Prodotti
+        for prod_data in PRODUCTS_DATA:
+            existing = db.query(Product).filter_by(codice=prod_data["codice"]).first()
+            if not existing:
+                product = Product(**prod_data)
+                db.add(product)
+                added_products += 1
 
-    return added_partners, added_products
+        if added_partners > 0 or added_products > 0:
+            db.commit()
+
+        return added_partners, added_products
+    finally:
+        if close_session:
+            db.close()
 
 if __name__ == '__main__':
-    with app.app_context():
+    with SessionLocal() as db:
         print("Avvio seed del dataset ReteBio in corso...")
-        p_count, prod_count = seed_data()
+        p_count, prod_count = seed_data(db)
         print(f"Seed completato con successo: inseriti {p_count} Partner e {prod_count} Prodotti.")

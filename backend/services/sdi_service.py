@@ -81,7 +81,7 @@ def validate_sdi_invoice(invoice: Invoice) -> dict:
         "nome_file_previsto": nome_file_previsto
     }
 
-def generate_sdi_xml(invoice: Invoice, cedente: dict = None) -> tuple[str, str]:
+def generate_sdi_xml(invoice: Invoice, cedente: dict = None, db = None) -> tuple[str, str]:
     """Genera l'XML conforme a FatturaPA v1.2.2 (FPR12) e restituisce (xml_string, filename)"""
     if cedente is None:
         cedente = DEFAULT_CEDENTE
@@ -180,9 +180,8 @@ def generate_sdi_xml(invoice: Invoice, cedente: dict = None) -> tuple[str, str]:
     for idx, it in enumerate(invoice.items):
         if it.delivery_note_id:
             ddt = it.delivery_note
-            if not ddt:
-                from models import db
-                ddt = db.session.get(DeliveryNote, it.delivery_note_id)
+            if not ddt and db:
+                ddt = db.get(DeliveryNote, it.delivery_note_id)
             if ddt:
                 if ddt.id not in ddt_grouped:
                     ddt_grouped[ddt.id] = {"ddt": ddt, "linee": []}

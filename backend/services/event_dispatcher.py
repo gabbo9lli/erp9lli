@@ -4,7 +4,9 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from redis import Redis
 from rq import Queue
-from models import db, EventChannel, EventCategory, EventType, SystemEvent
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from models import EventChannel, EventCategory, EventType, SystemEvent
 
 executor = ThreadPoolExecutor(max_workers=4)
 
@@ -36,60 +38,74 @@ DEFAULT_EVENT_TYPES = [
     {"codice": "SISTEMA_NOTIFICA", "nome": "Avviso / Notifica Critica", "descrizione": "Notifiche ed allarmi operativi urgenti", "channel": "AUDIT", "category": "SISTEMA", "modalita": "sincrono", "coda": "critical"}
 ]
 
-def seed_default_channels_and_categories():
-    if EventChannel.query.count() == 0:
-        for c in DEFAULT_CHANNELS:
-            db.session.add(EventChannel(**c))
-        db.session.commit()
-
-    if EventCategory.query.count() == 0:
-        for cat in DEFAULT_CATEGORIES:
-            db.session.add(EventCategory(**cat))
-        db.session.commit()
-
-    seed_default_event_types()
-
-def seed_default_event_types():
-    for et in DEFAULT_EVENT_TYPES:
-        existing = EventType.query.filter_by(codice=et["codice"]).first()
-        if not existing:
-            ch = EventChannel.query.filter_by(codice=et["channel"]).first()
-            cat = EventCategory.query.filter_by(codice=et["category"]).first()
-            if ch:
-                db.session.add(EventType(
-                    codice=et["codice"],
-                    nome=et["nome"],
-                    descrizione=et["descrizione"],
-                    channel_id=ch.id,
-                    category_id=cat.id if cat else None,
-                    modalita_esecuzione=et["modalita"],
-                    coda_nome=et["coda"]
-                ))
-    db.session.commit()
+def seed_default_channels_and_categories(db: Session = None):
+    close_session = False
+    if db is None:
+        db = SessionLocal()
+        close_session = True
 
     try:
-        from models import AccountingCausal
-        causali_map = {
-            "EMISSIONE_FATTURA": "VEND_FATT",
-            "INCASSO_RATA": "INCASSO_RATA",
-            "CARICO_MERCI": "ACQ_MERCI"
-        }
-        for ev_code, caus_code in causali_map.items():
-            ev = EventType.query.filter_by(codice=ev_code).first()
-            caus = AccountingCausal.query.filter_by(codice=caus_code).first()
-            if ev and caus and not ev.accounting_causal_id:
-                ev.accounting_causal_id = caus.id
-        db.session.commit()
-    except Exception:
-        pass
+        if db.query(EventChannel).count() == 0:
+            for c in DEFAULT_CHANNELS:
+                db.add(EventChannel(**c))
+            db.commit()
+
+        if db.query(EventCategory).count() == 0:
+            for cat in DEFAULT_CATEGORIES:
+                db.add(EventCategory(**cat))
+            db.commit()
+
+        seed_default_event_types(db)
+    finally:
+        if close_session:
+            db.close()
+
+def seed_default_event_types(db: Session = None):
+    close_session = False
+    if db is None:
+        db = SessionLocal()
+        close_session = True
+
+    try:
+        for et in DEFAULT_EVENT_TYPES:
+            existing = db.query(EventType).filter_by(codice=et["codice"]).first()
+            if not existing:
+                ch = db.query(EventChannel).filter_by(codice=et["channel"]).first()
+                cat = db.query(EventCategory).filter_by(codice=et["category"]).first()
+                if ch:
+                    db.add(EventType(
+                        codice=et["codice"],
+                        nome=et["nome"],
+                        descrizione=et["descrizione"],
+                        channel_id=ch.id,
+                        category_id=cat.id if cat else None,
+                        modalita_esecuzione=et["modalita"],
+                        coda_nome=et["coda"]
+                    ))
+        db.commit()
+
+        try:
+            from models import AccountingCausal
+            causali_map = {
+                "EMISSIONE_FATTURA": "VEND_FATT",
+                "INCASSO_RATA": "INCASSO_RATA",
+                "CARICO_MERCI": "ACQ_MERCI"
+            }
+            for ev_code, caus_code in causali_map.items():
+                ev = db.query(EventType).filter_by(codice=ev_code).first()
+                caus = db.query(AccountingCausal).filter_by(codice=caus_code).first()
+                if ev and caus and not ev.accounting_causal_id:
+                    ev.accounting_causal_id = caus.id
+            db.commit()
+        except Exception:
+            pass
+    finally:
+        if close_session:
+            db.close()
 
 def get_redis_connection():
-    try:
-        from flask import current_app
-        if current_app and current_app.config.get("TESTING"):
-            return None
-    except Exception:
-        pass
+    if os.getenv("TESTING", "0").lower() in ("1", "true"):
+        return None
     try:
         redis_host = os.getenv("REDIS_HOST", "redis")
         redis_port = int(os.getenv("REDIS_PORT", 6379))
@@ -104,22 +120,22 @@ def get_redis_connection():
         except Exception:
             return None
 
-def _run_async_event(app, event_id, target_func=None):
-    with app.app_context():
-        event = db.session.get(SystemEvent, event_id)
+def _run_async_event(event_id, target_func=None):
+    with SessionLocal() as db:
+        event = db.get(SystemEvent, event_id)
         if not event:
             return
         event.stato = 'in_corso'
         event.data_inizio_esecuzione = datetime.utcnow()
         event.progresso = 15
-        db.session.commit()
+        db.commit()
 
         try:
             if target_func:
                 target_func(event)
             else:
                 event.progresso = 60
-                db.session.commit()
+                db.commit()
                 time.sleep(0.05)
                 event.progresso = 100
 
@@ -136,16 +152,14 @@ def _run_async_event(app, event_id, target_func=None):
 
             event.data_completamento = datetime.utcnow()
             event.progresso = 100
-            db.session.commit()
+            db.commit()
         except Exception as e:
             event.stato = 'errore'
             event.note_esito = str(e)
-            db.session.commit()
+            db.commit()
 
 def _run_rq_event_job(event_id):
-    from app import app
-    with app.app_context():
-        _run_async_event(app, event_id, target_func=None)
+    _run_async_event(event_id, target_func=None)
 
 def dispatch_event(
     event_type_code=None,
@@ -164,101 +178,106 @@ def dispatch_event(
     is_async=None,
     coda_nome=None,
     livello="info",
-    target_func=None
+    target_func=None,
+    db: Session = None
 ) -> SystemEvent:
-    seed_default_channels_and_categories()
+    close_session = False
+    if db is None:
+        db = SessionLocal()
+        close_session = True
 
-    etype = None
-    if event_type_code:
-        etype = EventType.query.filter_by(codice=event_type_code).first()
+    try:
+        seed_default_channels_and_categories(db)
 
-    if etype:
-        event_type_id = etype.id
-        if channel_code is None and etype.channel:
-            channel_code = etype.channel.codice
-        if category_code is None and etype.category:
-            category_code = etype.category.codice
-        if is_async is None:
-            is_async = (etype.modalita_esecuzione == 'asincrono')
-        if coda_nome is None:
-            coda_nome = etype.coda_nome
-        if azione is None:
-            azione = etype.codice.lower()
-    else:
-        event_type_id = None
-        if is_async is None:
-            is_async = False
-        if coda_nome is None:
-            coda_nome = 'default'
-        if azione is None:
-            azione = 'custom_event'
+        etype = None
+        if event_type_code:
+            etype = db.query(EventType).filter_by(codice=event_type_code).first()
 
-    ch = EventChannel.query.filter_by(codice=channel_code or "AUDIT").first()
-    if not ch:
-        ch = EventChannel.query.filter_by(codice="AUDIT").first()
+        if etype:
+            event_type_id = etype.id
+            if channel_code is None and etype.channel:
+                channel_code = etype.channel.codice
+            if category_code is None and etype.category:
+                category_code = etype.category.codice
+            if is_async is None:
+                is_async = (etype.modalita_esecuzione == 'asincrono')
+            if coda_nome is None:
+                coda_nome = etype.coda_nome
+            if azione is None:
+                azione = etype.codice.lower()
+        else:
+            event_type_id = None
+            if is_async is None:
+                is_async = False
+            if coda_nome is None:
+                coda_nome = 'default'
+            if azione is None:
+                azione = 'custom_event'
 
-    cat = EventCategory.query.filter_by(codice=category_code or "SISTEMA").first()
+        ch = db.query(EventChannel).filter_by(codice=channel_code or "AUDIT").first()
+        if not ch:
+            ch = db.query(EventChannel).filter_by(codice="AUDIT").first()
 
-    event = SystemEvent(
-        channel_id=ch.id,
-        category_id=cat.id if cat else None,
-        event_type_id=event_type_id,
-        coda_nome=coda_nome,
-        livello=livello,
-        azione=azione,
-        titolo=titolo,
-        descrizione=descrizione,
-        payload_dati=payload_dati,
-        destinatario_recapito=destinatario_recapito,
-        partner_id=partner_id,
-        entita_tipo=entita_tipo,
-        entita_id=entita_id,
-        utente_id=utente_id,
-        utente_email=utente_email,
-        is_async=is_async,
-        progresso=0,
-        stato='in_coda' if is_async else 'in_corso'
-    )
-    db.session.add(event)
-    db.session.commit()
+        cat = db.query(EventCategory).filter_by(codice=category_code or "SISTEMA").first()
 
-    if is_async:
-        from flask import current_app
-        app = current_app._get_current_object()
+        event = SystemEvent(
+            channel_id=ch.id if ch else None,
+            category_id=cat.id if cat else None,
+            event_type_id=event_type_id,
+            coda_nome=coda_nome,
+            livello=livello,
+            azione=azione,
+            titolo=titolo,
+            descrizione=descrizione,
+            payload_dati=payload_dati,
+            destinatario_recapito=destinatario_recapito,
+            partner_id=partner_id,
+            entita_tipo=entita_tipo,
+            entita_id=entita_id,
+            utente_id=utente_id,
+            utente_email=utente_email,
+            is_async=is_async,
+            progresso=0,
+            stato='in_coda' if is_async else 'in_corso'
+        )
+        db.add(event)
+        db.commit()
 
-        # Prova accodamento su RQ se Redis è attivo e non siamo in TESTING puro
-        redis_conn = get_redis_connection()
-        if redis_conn and not app.config.get("TESTING"):
-            try:
-                rq_queue = Queue(coda_nome or 'default', connection=redis_conn)
-                job = rq_queue.enqueue(_run_rq_event_job, event.id)
-                event.rq_job_id = job.id
-                db.session.commit()
+        if is_async:
+            is_testing = os.getenv("TESTING", "0").lower() in ("1", "true")
+
+            redis_conn = get_redis_connection()
+            if redis_conn and not is_testing:
+                try:
+                    rq_queue = Queue(coda_nome or 'default', connection=redis_conn)
+                    job = rq_queue.enqueue(_run_rq_event_job, event.id)
+                    event.rq_job_id = job.id
+                    db.commit()
+                    return event
+                except Exception:
+                    pass
+
+            if is_testing:
+                _run_async_event(event.id, target_func)
                 return event
-            except Exception:
-                pass
 
-        if app.config.get("TESTING"):
-            _run_async_event(app, event.id, target_func)
+            executor.submit(_run_async_event, event.id, target_func)
             return event
-
-        executor.submit(_run_async_event, app, event.id, target_func)
-        return event
-    else:
-        # Sincrono
-        if ch.tipo_dispatcher == 'smtp':
-            smtp_enabled = os.getenv('SMTP_ENABLED', 'false').lower() == 'true'
-            if not smtp_enabled:
-                event.stato = 'test'
-                event.note_esito = "Evento archiviato in modalità test. Nessuna spedizione esterna eseguita."
+        else:
+            if ch and ch.tipo_dispatcher == 'smtp':
+                smtp_enabled = os.getenv('SMTP_ENABLED', 'false').lower() == 'true'
+                if not smtp_enabled:
+                    event.stato = 'test'
+                    event.note_esito = "Evento archiviato in modalità test. Nessuna spedizione esterna eseguita."
+                else:
+                    event.stato = 'completato'
+                    event.note_esito = "Email inviata con successo."
             else:
                 event.stato = 'completato'
-                event.note_esito = "Email inviata con successo."
-        else:
-            event.stato = 'completato'
 
-        event.progresso = 100
-        event.data_inizio_esecuzione = datetime.utcnow()
-        event.data_completamento = datetime.utcnow()
-        db.session.commit()
-        return event
+            event.progresso = 100
+            db.commit()
+            return event
+    finally:
+        if close_session:
+            db.close()

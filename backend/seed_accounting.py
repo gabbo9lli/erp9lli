@@ -1,4 +1,6 @@
-from models import db, Account, AccountingCausal, EventType
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from models import Account, AccountingCausal, EventType
 
 CHART_OF_ACCOUNTS = [
     # ATTIVO (1xxx)
@@ -79,66 +81,83 @@ DEFAULT_ACCOUNTING_CAUSALS = [
     }
 ]
 
-def seed_chart_of_accounts():
-    if Account.query.count() >= len(CHART_OF_ACCOUNTS):
-        return 0
-    added = 0
-    for acc_data in CHART_OF_ACCOUNTS:
-        existing = Account.query.filter_by(codice=acc_data["codice"]).first()
-        if not existing:
-            acc = Account(**acc_data)
-            db.session.add(acc)
-            added += 1
-    if added > 0:
-        db.session.commit()
-    return added
+def seed_chart_of_accounts(db: Session = None):
+    close_session = False
+    if db is None:
+        db = SessionLocal()
+        close_session = True
 
-def seed_default_accounting_causals():
-    seed_chart_of_accounts()
-    if AccountingCausal.query.count() >= len(DEFAULT_ACCOUNTING_CAUSALS):
-        return 0
+    try:
+        if db.query(Account).count() >= len(CHART_OF_ACCOUNTS):
+            return 0
+        added = 0
+        for acc_data in CHART_OF_ACCOUNTS:
+            existing = db.query(Account).filter_by(codice=acc_data["codice"]).first()
+            if not existing:
+                acc = Account(**acc_data)
+                db.add(acc)
+                added += 1
+        if added > 0:
+            db.commit()
+        return added
+    finally:
+        if close_session:
+            db.close()
 
-    added = 0
-    for c_data in DEFAULT_ACCOUNTING_CAUSALS:
-        existing = AccountingCausal.query.filter_by(codice=c_data["codice"]).first()
-        acc_dare = Account.query.filter_by(codice=c_data["conto_dare"]).first() if c_data.get("conto_dare") else None
-        acc_avere = Account.query.filter_by(codice=c_data["conto_avere"]).first() if c_data.get("conto_avere") else None
-        acc_iva = Account.query.filter_by(codice=c_data["conto_iva"]).first() if c_data.get("conto_iva") else None
+def seed_default_accounting_causals(db: Session = None):
+    close_session = False
+    if db is None:
+        db = SessionLocal()
+        close_session = True
 
-        if not existing:
-            causal = AccountingCausal(
-                codice=c_data["codice"],
-                descrizione=c_data["descrizione"],
-                tipo_registro=c_data["tipo_registro"],
-                conto_dare_id=acc_dare.id if acc_dare else None,
-                conto_avere_id=acc_avere.id if acc_avere else None,
-                conto_iva_id=acc_iva.id if acc_iva else None,
-                template_descrizione=c_data.get("template_descrizione")
-            )
-            db.session.add(causal)
-            added += 1
+    try:
+        seed_chart_of_accounts(db)
+        if db.query(AccountingCausal).count() >= len(DEFAULT_ACCOUNTING_CAUSALS):
+            return 0
 
-    if added > 0:
-        db.session.commit()
+        added = 0
+        for c_data in DEFAULT_ACCOUNTING_CAUSALS:
+            existing = db.query(AccountingCausal).filter_by(codice=c_data["codice"]).first()
+            acc_dare = db.query(Account).filter_by(codice=c_data["conto_dare"]).first() if c_data.get("conto_dare") else None
+            acc_avere = db.query(Account).filter_by(codice=c_data["conto_avere"]).first() if c_data.get("conto_avere") else None
+            acc_iva = db.query(Account).filter_by(codice=c_data["conto_iva"]).first() if c_data.get("conto_iva") else None
 
-    causali_map = {
-        "EMISSIONE_FATTURA": "VEND_FATT",
-        "INCASSO_RATA": "INCASSO_RATA",
-        "CARICO_MERCI": "ACQ_MERCI"
-    }
-    for ev_code, caus_code in causali_map.items():
-        ev = EventType.query.filter_by(codice=ev_code).first()
-        caus = AccountingCausal.query.filter_by(codice=caus_code).first()
-        if ev and caus and not ev.accounting_causal_id:
-            ev.accounting_causal_id = caus.id
-    db.session.commit()
-    return added
+            if not existing:
+                causal = AccountingCausal(
+                    codice=c_data["codice"],
+                    descrizione=c_data["descrizione"],
+                    tipo_registro=c_data["tipo_registro"],
+                    conto_dare_id=acc_dare.id if acc_dare else None,
+                    conto_avere_id=acc_avere.id if acc_avere else None,
+                    conto_iva_id=acc_iva.id if acc_iva else None,
+                    template_descrizione=c_data.get("template_descrizione")
+                )
+                db.add(causal)
+                added += 1
+
+        if added > 0:
+            db.commit()
+
+        causali_map = {
+            "EMISSIONE_FATTURA": "VEND_FATT",
+            "INCASSO_RATA": "INCASSO_RATA",
+            "CARICO_MERCI": "ACQ_MERCI"
+        }
+        for ev_code, caus_code in causali_map.items():
+            ev = db.query(EventType).filter_by(codice=ev_code).first()
+            caus = db.query(AccountingCausal).filter_by(codice=caus_code).first()
+            if ev and caus and not ev.accounting_causal_id:
+                ev.accounting_causal_id = caus.id
+        db.commit()
+        return added
+    finally:
+        if close_session:
+            db.close()
 
 if __name__ == '__main__':
-    from app import app
-    with app.app_context():
+    with SessionLocal() as db:
         print("Inizializzazione Piano dei Conti standard in corso...")
-        count = seed_chart_of_accounts()
+        count = seed_chart_of_accounts(db)
         print(f"Piano dei Conti completato: inseriti {count} nuovi conti.")
-        c_count = seed_default_accounting_causals()
+        c_count = seed_default_accounting_causals(db)
         print(f"Causali Contabili completate: inserite {c_count} nuove causali.")
