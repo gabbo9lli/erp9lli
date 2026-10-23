@@ -8,6 +8,7 @@ from database import get_db
 from models import PalletType, PalletReceipt, PalletReceiptItem, Partner, Product, Invoice, InvoiceItem, InvoiceInstallment, User
 from api.deps import require_auth
 from api.routers.invoices import get_next_invoice_number, calculate_installments
+from schemas.pallet import PalletTypeResponse, PalletReceiptResponse, PalletLedgerItemResponse
 
 router = APIRouter(prefix="/api/pallets", tags=["Pallets L. 182/2025"])
 
@@ -28,16 +29,16 @@ def get_next_pallet_receipt_number(anno: int, db: Session) -> int:
     max_num = db.query(func.max(PalletReceipt.numero)).filter_by(anno=anno).scalar()
     return (max_num or 0) + 1
 
-@router.get("/types")
+@router.get("/types", response_model=List[PalletTypeResponse])
 def get_pallet_types(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)
 ):
     seed_default_pallet_types(db)
     types = db.query(PalletType).filter_by(attivo=True).order_by(PalletType.codice.asc()).all()
-    return [t.to_dict() for t in types]
+    return types
 
-@router.post("/types", status_code=status.HTTP_201_CREATED)
+@router.post("/types", response_model=PalletTypeResponse, status_code=status.HTTP_201_CREATED)
 async def create_pallet_type(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -47,7 +48,7 @@ async def create_pallet_type(
     codice = data.get('codice')
     descrizione = data.get('descrizione')
     if not codice or not descrizione:
-        return JSONResponse(status_code=400, content={"error": "codice e descrizione sono obbligatori"})
+        raise HTTPException(status_code=400, detail="codice e descrizione sono obbligatori")
     pt = PalletType(
         codice=codice,
         descrizione=descrizione,
@@ -58,9 +59,9 @@ async def create_pallet_type(
     db.add(pt)
     db.commit()
     db.refresh(pt)
-    return JSONResponse(status_code=201, content=pt.to_dict())
+    return pt
 
-@router.get("/receipts")
+@router.get("/receipts", response_model=List[PalletReceiptResponse])
 def get_pallet_receipts(
     partner_id: Optional[int] = None,
     stato: Optional[str] = None,
@@ -80,9 +81,9 @@ def get_pallet_receipts(
             (Partner.ragione_sociale.ilike(search_filter))
         )
     receipts = query.order_by(PalletReceipt.data_emissione.desc(), PalletReceipt.numero.desc()).all()
-    return [r.to_dict() for r in receipts]
+    return receipts
 
-@router.get("/receipts/{pid}")
+@router.get("/receipts/{pid}", response_model=PalletReceiptResponse)
 def get_pallet_receipt_detail(
     pid: int,
     current_user: User = Depends(require_auth()),
@@ -90,10 +91,10 @@ def get_pallet_receipt_detail(
 ):
     receipt = db.get(PalletReceipt, pid)
     if not receipt:
-        return JSONResponse(status_code=404, content={"error": "Pallet receipt not found"})
-    return receipt.to_dict()
+        raise HTTPException(status_code=404, detail="Pallet receipt not found")
+    return receipt
 
-@router.post("/receipts", status_code=status.HTTP_201_CREATED)
+@router.post("/receipts", response_model=PalletReceiptResponse, status_code=status.HTTP_201_CREATED)
 async def create_pallet_receipt(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -170,12 +171,12 @@ async def create_pallet_receipt(
     try:
         db.commit()
         db.refresh(receipt)
-        return JSONResponse(status_code=201, content=receipt.to_dict())
+        return receipt
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/receipts/{pid}/return")
+@router.post("/receipts/{pid}/return", response_model=PalletReceiptResponse)
 async def return_pallet_receipt(
     pid: int,
     request: Request,
@@ -184,9 +185,9 @@ async def return_pallet_receipt(
 ):
     receipt = db.get(PalletReceipt, pid)
     if not receipt:
-        return JSONResponse(status_code=404, content={"error": "Pallet receipt not found"})
+        raise HTTPException(status_code=404, detail="Pallet receipt not found")
     if receipt.stato == 'fatturato':
-        return JSONResponse(status_code=400, content={"error": "Impossibile restituire pallet su un buono già fatturato"})
+        raise HTTPException(status_code=400, detail="Impossibile restituire pallet su un buono già fatturato")
 
     data = await request.json()
     items_returns = data.get('items', [])
@@ -210,12 +211,12 @@ async def return_pallet_receipt(
     try:
         db.commit()
         db.refresh(receipt)
-        return receipt.to_dict()
+        return receipt
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/ledger")
+@router.get("/ledger", response_model=List[PalletLedgerItemResponse])
 def get_pallets_ledger(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)

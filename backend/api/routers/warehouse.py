@@ -9,10 +9,11 @@ from models import PurchaseDeliveryNote, PurchaseDeliveryNoteItem, DeliveryNoteI
 from api.deps import require_auth
 from services.barcode_label_service import BarcodeLabelService
 from services.event_dispatcher import dispatch_event
+from schemas.warehouse import PurchaseDeliveryNoteResponse, StockItemResponse, FefoSuggestionResponse
 
 router = APIRouter(prefix="/api", tags=["Warehouse & Purchases"])
 
-@router.get("/purchases")
+@router.get("/purchases", response_model=List[PurchaseDeliveryNoteResponse])
 def get_purchases(
     fornitore_id: Optional[int] = None,
     current_user: User = Depends(require_auth()),
@@ -22,9 +23,9 @@ def get_purchases(
     if fornitore_id:
         query = query.filter_by(fornitore_id=fornitore_id)
     purchases = query.order_by(PurchaseDeliveryNote.data_ricezione.desc(), PurchaseDeliveryNote.id.desc()).all()
-    return [p.to_dict() for p in purchases]
+    return purchases
 
-@router.get("/purchases/{pid}")
+@router.get("/purchases/{pid}", response_model=PurchaseDeliveryNoteResponse)
 def get_purchase_detail(
     pid: int,
     current_user: User = Depends(require_auth()),
@@ -32,10 +33,10 @@ def get_purchase_detail(
 ):
     purchase = db.get(PurchaseDeliveryNote, pid)
     if not purchase:
-        return JSONResponse(status_code=404, content={"error": "Purchase delivery note not found"})
-    return purchase.to_dict()
+        raise HTTPException(status_code=404, detail="Purchase delivery note not found")
+    return purchase
 
-@router.post("/purchases", status_code=status.HTTP_201_CREATED)
+@router.post("/purchases", response_model=PurchaseDeliveryNoteResponse, status_code=status.HTTP_201_CREATED)
 async def create_purchase(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -124,6 +125,7 @@ async def create_purchase(
         # Dispatch evento su Event Bus
         try:
             dispatch_event(
+                db=db,
                 azione="carico_merci",
                 titolo=f"Carico Merci Fornitore {purchase.numero_documento_fornitore}",
                 descrizione=f"Registrata entrata merci da fornitore {supplier.ragione_sociale}",
@@ -131,16 +133,15 @@ async def create_purchase(
                 category_code="ACQUISTI",
                 entita_tipo="purchase_delivery_note",
                 entita_id=purchase.id,
-                partner_id=supplier.id,
-                db=db
+                partner_id=supplier.id
             )
         except Exception:
             pass
 
-        return JSONResponse(status_code=201, content=purchase.to_dict())
+        return purchase
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/purchases/{pid}/labels")
 def get_purchase_labels(
@@ -151,7 +152,7 @@ def get_purchase_labels(
 ):
     pnote = db.get(PurchaseDeliveryNote, pid)
     if not pnote:
-        return JSONResponse(status_code=404, content={"error": "Purchase delivery note not found"})
+        raise HTTPException(status_code=404, detail="Purchase delivery note not found")
 
     labels = []
     for it in pnote.items:
@@ -171,7 +172,7 @@ def get_purchase_labels(
 
     return {"purchase_id": pnote.id, "count": len(labels), "labels": labels}
 
-@router.get("/warehouse/stock")
+@router.get("/warehouse/stock", response_model=List[StockItemResponse])
 def get_warehouse_stock(
     current_user: User = Depends(require_auth()),
     db: Session = Depends(get_db)
@@ -239,7 +240,7 @@ def get_warehouse_stock(
     stock_list.sort(key=lambda s: (s['product_codice'], s['data_scadenza'] or '9999-12-31'))
     return stock_list
 
-@router.get("/warehouse/fefo-suggestions")
+@router.get("/warehouse/fefo-suggestions", response_model=List[FefoSuggestionResponse])
 def get_fefo_suggestions(
     product_id: int,
     current_user: User = Depends(require_auth()),

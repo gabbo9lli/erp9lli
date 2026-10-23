@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import CmrDocument, CmrItem, DeliveryNote, Partner, Product, User
 from api.deps import require_auth
+from schemas.cmr import CmrDocumentResponse
 
 router = APIRouter(prefix="/api/cmr", tags=["CMR Export"])
 
@@ -14,7 +15,7 @@ def get_next_cmr_number(anno: int, db: Session) -> int:
     max_num = db.query(func.max(CmrDocument.numero)).filter_by(anno=anno).scalar()
     return (max_num or 0) + 1
 
-@router.get("")
+@router.get("", response_model=List[CmrDocumentResponse])
 def get_cmr_documents(
     cliente_id: Optional[int] = None,
     vettore_id: Optional[int] = None,
@@ -38,9 +39,9 @@ def get_cmr_documents(
             (CmrDocument.luogo_consegna.ilike(search_filter))
         )
     documents = query.order_by(CmrDocument.data_documento.desc(), CmrDocument.numero.desc()).all()
-    return [d.to_dict() for d in documents]
+    return documents
 
-@router.get("/{cid}")
+@router.get("/{cid}", response_model=CmrDocumentResponse)
 def get_cmr_detail(
     cid: int,
     current_user: User = Depends(require_auth()),
@@ -48,10 +49,10 @@ def get_cmr_detail(
 ):
     cmr = db.get(CmrDocument, cid)
     if not cmr:
-        return JSONResponse(status_code=404, content={"error": "CMR not found"})
-    return cmr.to_dict()
+        raise HTTPException(status_code=404, detail="CMR not found")
+    return cmr
 
-@router.post("/from-ddt/{ddt_id}", status_code=status.HTTP_201_CREATED)
+@router.post("/from-ddt/{ddt_id}", response_model=CmrDocumentResponse, status_code=status.HTTP_201_CREATED)
 def create_cmr_from_ddt(
     ddt_id: int,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -59,9 +60,9 @@ def create_cmr_from_ddt(
 ):
     ddt = db.get(DeliveryNote, ddt_id)
     if not ddt:
-        return JSONResponse(status_code=404, content={"error": "DDT not found"})
+        raise HTTPException(status_code=404, detail="DDT not found")
     if not ddt.cliente:
-        return JSONResponse(status_code=400, content={"error": "DDT privo di cliente associato"})
+        raise HTTPException(status_code=400, detail="DDT privo di cliente associato")
 
     today = date.today()
     anno = today.year
@@ -134,12 +135,12 @@ def create_cmr_from_ddt(
     try:
         db.commit()
         db.refresh(cmr)
-        return JSONResponse(status_code=201, content=cmr.to_dict())
+        return cmr
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CmrDocumentResponse, status_code=status.HTTP_201_CREATED)
 async def create_cmr_manual(
     request: Request,
     current_user: User = Depends(require_auth(roles=['Admin'])),
@@ -148,14 +149,14 @@ async def create_cmr_manual(
     data = await request.json()
     cliente_id = data.get('cliente_id')
     if not cliente_id:
-        return JSONResponse(status_code=400, content={"error": "cliente_id obbligatorio"})
+        raise HTTPException(status_code=400, detail="cliente_id obbligatorio")
     cliente = db.get(Partner, cliente_id)
     if not cliente:
-        return JSONResponse(status_code=404, content={"error": "Cliente non trovato"})
+        raise HTTPException(status_code=404, detail="Cliente non trovato")
 
     items_data = data.get('items', [])
     if not items_data:
-        return JSONResponse(status_code=400, content={"error": "Almeno una riga merce richiesta"})
+        raise HTTPException(status_code=400, detail="Almeno una riga merce richiesta")
 
     today = date.today()
     anno = today.year
@@ -220,12 +221,12 @@ async def create_cmr_manual(
     try:
         db.commit()
         db.refresh(cmr)
-        return JSONResponse(status_code=201, content=cmr.to_dict())
+        return cmr
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.put("/{cid}")
+@router.put("/{cid}", response_model=CmrDocumentResponse)
 async def update_cmr(
     cid: int,
     request: Request,
@@ -234,7 +235,7 @@ async def update_cmr(
 ):
     cmr = db.get(CmrDocument, cid)
     if not cmr:
-        return JSONResponse(status_code=404, content={"error": "CMR not found"})
+        raise HTTPException(status_code=404, detail="CMR not found")
     data = await request.json()
     if 'targa_automezzo' in data:
         cmr.targa_automezzo = data['targa_automezzo']
@@ -249,10 +250,10 @@ async def update_cmr(
     try:
         db.commit()
         db.refresh(cmr)
-        return cmr.to_dict()
+        return cmr
     except Exception as e:
         db.rollback()
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{cid}/print")
 def get_cmr_print_format(
