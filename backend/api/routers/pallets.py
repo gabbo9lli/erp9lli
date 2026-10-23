@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import PalletType, PalletReceipt, PalletReceiptItem, Partner, Product, Invoice, InvoiceItem, InvoiceInstallment, User
 from api.deps import require_auth
-from api.routers.invoices import get_next_invoice_number, calculate_installments
+from services.invoice_service import InvoiceService
 from schemas.pallet import PalletTypeResponse, PalletReceiptResponse, PalletLedgerItemResponse
 
 router = APIRouter(prefix="/api/pallets", tags=["Pallets L. 182/2025"])
@@ -282,7 +282,7 @@ def invoice_unreturned_pallets(
 
     today = date.today()
     anno = today.year
-    numero = get_next_invoice_number(anno, db)
+    numero = InvoiceService.get_next_invoice_number(db, anno)
     numero_completo = f"FT-{anno}-{numero:04d}"
 
     totale_imponibile = 0.0
@@ -318,11 +318,11 @@ def invoice_unreturned_pallets(
         "Operazione in Reverse Charge ai sensi dell'Art. 74 comma 7/8 DPR 633/72 per cessione imballaggi usati."
     )
 
-    rate_data = calculate_installments(totale_fattura, today, receipt.partner.condizioni_pagamento or '30gg fm')
+    rate_data = InvoiceService.calculate_installments(totale_fattura, today, receipt.partner.condizioni_pagamento or '30gg fm')
     installments = [
         InvoiceInstallment(
             numero_rata=r["numero_rata"],
-            totale_rate=r["totale_rate"],
+            totale_rate=len(rate_data),
             data_scadenza=r["data_scadenza"],
             importo=r["importo"],
             stato="aperta"

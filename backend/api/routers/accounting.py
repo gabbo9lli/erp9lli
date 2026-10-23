@@ -135,73 +135,7 @@ async def create_journal_entry(
     db: Session = Depends(get_db)
 ):
     data = await request.json()
-    causale = data.get('causale')
-    items_data = data.get('items', [])
-    if not causale:
-        return JSONResponse(status_code=400, content={"error": "causale is required"})
-    if len(items_data) < 2:
-        return JSONResponse(status_code=400, content={"error": "La scrittura di prima nota richiede almeno due righe contabili"})
-
-    totale_dare = 0.0
-    totale_avere = 0.0
-    journal_items = []
-
-    for it in items_data:
-        acc_id = it.get('account_id')
-        dare = round(float(it.get('dare', 0.0)), 2)
-        avere = round(float(it.get('avere', 0.0)), 2)
-        if not acc_id:
-            return JSONResponse(status_code=400, content={"error": "account_id obbligatorio per ciascuna riga"})
-        totale_dare += dare
-        totale_avere += avere
-        journal_items.append(JournalItem(
-            account_id=acc_id,
-            partner_id=it.get('partner_id'),
-            dare=dare,
-            avere=avere,
-            descrizione_riga=it.get('descrizione_riga')
-        ))
-
-    totale_dare = round(totale_dare, 2)
-    totale_avere = round(totale_avere, 2)
-
-    # VINCOLO BLOCCANTE PARTITA DOPPIA A PAREGGIO
-    if abs(totale_dare - totale_avere) > 0.001:
-        return JSONResponse(
-            status_code=400,
-            content={"error": f"Scrittura sbilanciata! Il totale Dare (€ {totale_dare}) non coincide con il totale Avere (€ {totale_avere})"}
-        )
-
-    doc_date_str = data.get('data_registrazione')
-    doc_date = datetime.strptime(doc_date_str, '%Y-%m-%d').date() if doc_date_str else date.today()
-    comp_date_str = data.get('data_competenza')
-    comp_date = datetime.strptime(comp_date_str, '%Y-%m-%d').date() if comp_date_str else doc_date
-
-    anno = doc_date.year
-    numero = get_next_journal_entry_number(anno, db)
-    numero_completo = f"PN-{anno}-{numero:04d}"
-
-    entry = JournalEntry(
-        numero=numero,
-        anno=anno,
-        numero_completo=numero_completo,
-        data_registrazione=doc_date,
-        data_competenza=comp_date,
-        causale=causale,
-        totale_dare=totale_dare,
-        totale_avere=totale_avere,
-        stato=data.get('stato', 'confermata'),
-        note=data.get('note'),
-        items=journal_items
-    )
-    db.add(entry)
-    try:
-        db.commit()
-        db.refresh(entry)
-        return entry
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+    return AccountingService.create_journal_entry(db, data)
 
 @router.get("/reports/libro-giornale")
 def report_libro_giornale(
