@@ -1,16 +1,18 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class JournalItem(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entry.id', ondelete='CASCADE'), nullable=False)
-    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
-    partner_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=True)
-    dare = db.Column(db.Float, nullable=False, default=0.0)
-    avere = db.Column(db.Float, nullable=False, default=0.0)
-    descrizione_riga = db.Column(db.String(200), nullable=True)
+class JournalItem(Base):
+    id = Column(Integer, primary_key=True)
+    journal_entry_id = Column(Integer, ForeignKey('journal_entry.id', ondelete='CASCADE'), nullable=False)
+    account_id = Column(Integer, ForeignKey('account.id'), nullable=False)
+    partner_id = Column(Integer, ForeignKey('partner.id'), nullable=True)
+    dare = Column(Float, nullable=False, default=0.0)
+    avere = Column(Float, nullable=False, default=0.0)
+    descrizione_riga = Column(String(200), nullable=True)
 
-    account = db.relationship('Account')
-    partner = db.relationship('Partner')
+    account = relationship('Account')
+    partner = relationship('Partner')
 
     def to_dict(self):
         return {

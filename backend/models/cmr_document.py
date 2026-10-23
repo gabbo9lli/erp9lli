@@ -1,30 +1,32 @@
 from datetime import date
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class CmrDocument(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    numero = db.Column(db.Integer, nullable=False)
-    anno = db.Column(db.Integer, nullable=False)
-    numero_completo = db.Column(db.String(30), unique=True, nullable=False, index=True)
-    data_documento = db.Column(db.Date, nullable=False, default=date.today)
-    delivery_note_id = db.Column(db.Integer, db.ForeignKey('delivery_note.id'), nullable=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=False)
-    vettore_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=True)
-    luogo_carico = db.Column(db.String(100), nullable=False, default='ALESSANDRIA (AL)')
-    luogo_consegna = db.Column(db.String(200), nullable=False)
-    targa_automezzo = db.Column(db.String(20), nullable=True)
-    targa_rimorchio = db.Column(db.String(20), nullable=True)
-    istruzioni_mittente = db.Column(db.Text, nullable=True)
-    totale_colli = db.Column(db.Integer, nullable=False, default=0)
-    peso_totale_netto = db.Column(db.Float, nullable=False, default=0.0)
-    peso_totale_lordo = db.Column(db.Float, nullable=False, default=0.0)
-    ha_allegato_righe = db.Column(db.Boolean, nullable=False, default=False)
-    stato = db.Column(db.String(20), nullable=False, default='emesso') # bozza, emesso
+class CmrDocument(Base):
+    id = Column(Integer, primary_key=True)
+    numero = Column(Integer, nullable=False)
+    anno = Column(Integer, nullable=False)
+    numero_completo = Column(String(30), unique=True, nullable=False, index=True)
+    data_documento = Column(Date, nullable=False, default=date.today)
+    delivery_note_id = Column(Integer, ForeignKey('delivery_note.id'), nullable=True)
+    cliente_id = Column(Integer, ForeignKey('partner.id'), nullable=False)
+    vettore_id = Column(Integer, ForeignKey('partner.id'), nullable=True)
+    luogo_carico = Column(String(100), nullable=False, default='ALESSANDRIA (AL)')
+    luogo_consegna = Column(String(200), nullable=False)
+    targa_automezzo = Column(String(20), nullable=True)
+    targa_rimorchio = Column(String(20), nullable=True)
+    istruzioni_mittente = Column(Text, nullable=True)
+    totale_colli = Column(Integer, nullable=False, default=0)
+    peso_totale_netto = Column(Float, nullable=False, default=0.0)
+    peso_totale_lordo = Column(Float, nullable=False, default=0.0)
+    ha_allegato_righe = Column(Boolean, nullable=False, default=False)
+    stato = Column(String(20), nullable=False, default='emesso') # bozza, emesso
 
-    cliente = db.relationship('Partner', foreign_keys=[cliente_id], backref='cmr_ricevuti')
-    vettore = db.relationship('Partner', foreign_keys=[vettore_id], backref='cmr_trasportati')
-    delivery_note = db.relationship('DeliveryNote', backref='cmr_document')
-    items = db.relationship('CmrItem', backref='document', cascade='all, delete-orphan', passive_deletes=True, order_by='CmrItem.riga_numero')
+    cliente = relationship('Partner', foreign_keys=[cliente_id], backref='cmr_ricevuti')
+    vettore = relationship('Partner', foreign_keys=[vettore_id], backref='cmr_trasportati')
+    delivery_note = relationship('DeliveryNote', backref='cmr_document')
+    items = relationship('CmrItem', backref='document', cascade='all, delete-orphan', passive_deletes=True, order_by='CmrItem.riga_numero')
 
     def to_dict(self):
         return {

@@ -1,19 +1,21 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class AccountingCausal(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    codice = db.Column(db.String(30), unique=True, nullable=False, index=True)
-    descrizione = db.Column(db.String(150), nullable=False)
-    tipo_registro = db.Column(db.String(30), nullable=False, default='generale') # vendite, acquisti, corrispettivi, generale
-    conto_dare_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=True)
-    conto_avere_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=True)
-    conto_iva_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=True)
-    template_descrizione = db.Column(db.String(200), nullable=True)
-    attivo = db.Column(db.Boolean, nullable=False, default=True)
+class AccountingCausal(Base):
+    id = Column(Integer, primary_key=True)
+    codice = Column(String(30), unique=True, nullable=False, index=True)
+    descrizione = Column(String(150), nullable=False)
+    tipo_registro = Column(String(30), nullable=False, default='generale') # vendite, acquisti, corrispettivi, generale
+    conto_dare_id = Column(Integer, ForeignKey('account.id'), nullable=True)
+    conto_avere_id = Column(Integer, ForeignKey('account.id'), nullable=True)
+    conto_iva_id = Column(Integer, ForeignKey('account.id'), nullable=True)
+    template_descrizione = Column(String(200), nullable=True)
+    attivo = Column(Boolean, nullable=False, default=True)
 
-    conto_dare = db.relationship('Account', foreign_keys=[conto_dare_id])
-    conto_avere = db.relationship('Account', foreign_keys=[conto_avere_id])
-    conto_iva = db.relationship('Account', foreign_keys=[conto_iva_id])
+    conto_dare = relationship('Account', foreign_keys=[conto_dare_id])
+    conto_avere = relationship('Account', foreign_keys=[conto_avere_id])
+    conto_iva = relationship('Account', foreign_keys=[conto_iva_id])
 
     def to_dict(self):
         return {

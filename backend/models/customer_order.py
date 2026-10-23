@@ -1,23 +1,25 @@
 from datetime import date
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class CustomerOrder(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    numero = db.Column(db.Integer, nullable=False)
-    anno = db.Column(db.Integer, nullable=False)
-    numero_completo = db.Column(db.String(30), unique=True, nullable=False, index=True)
-    data_ordine = db.Column(db.Date, nullable=False, default=date.today)
-    data_richiesta = db.Column(db.Date, nullable=True)
-    data_confermata = db.Column(db.Date, nullable=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=False)
-    stato = db.Column(db.String(20), nullable=False, default='aperto') # aperto, in_lavorazione, chiuso
-    totale_imponibile = db.Column(db.Float, nullable=False, default=0.0)
-    note = db.Column(db.Text, nullable=True)
-    external_reference = db.Column(db.String(100), nullable=True, index=True)
-    canale_vendita = db.Column(db.String(30), nullable=False, server_default='diretto', default='diretto') # diretto, ecommerce, bancom
+class CustomerOrder(Base):
+    id = Column(Integer, primary_key=True)
+    numero = Column(Integer, nullable=False)
+    anno = Column(Integer, nullable=False)
+    numero_completo = Column(String(30), unique=True, nullable=False, index=True)
+    data_ordine = Column(Date, nullable=False, default=date.today)
+    data_richiesta = Column(Date, nullable=True)
+    data_confermata = Column(Date, nullable=True)
+    cliente_id = Column(Integer, ForeignKey('partner.id'), nullable=False)
+    stato = Column(String(20), nullable=False, default='aperto') # aperto, in_lavorazione, chiuso
+    totale_imponibile = Column(Float, nullable=False, default=0.0)
+    note = Column(Text, nullable=True)
+    external_reference = Column(String(100), nullable=True, index=True)
+    canale_vendita = Column(String(30), nullable=False, server_default='diretto', default='diretto') # diretto, ecommerce, bancom
 
-    cliente = db.relationship('Partner', backref='ordini_cliente')
-    items = db.relationship('OrderItem', backref='order', cascade='all, delete-orphan', passive_deletes=True, order_by='OrderItem.sequenza')
+    cliente = relationship('Partner', backref='ordini_cliente')
+    items = relationship('OrderItem', backref='order', cascade='all, delete-orphan', passive_deletes=True, order_by='OrderItem.sequenza')
 
     def to_dict(self):
         return {

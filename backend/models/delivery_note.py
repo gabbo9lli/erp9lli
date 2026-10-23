@@ -1,28 +1,30 @@
 from datetime import date
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class DeliveryNote(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    numero = db.Column(db.Integer, nullable=False)
-    anno = db.Column(db.Integer, nullable=False)
-    numero_completo = db.Column(db.String(30), unique=True, nullable=False, index=True)
-    data_documento = db.Column(db.Date, nullable=False, default=date.today)
-    data_trasporto = db.Column(db.DateTime, nullable=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=False)
-    vettore_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=True)
-    causale_trasporto = db.Column(db.String(50), nullable=False, default='Vendita')
-    porto = db.Column(db.String(20), nullable=False, default='Franco')
-    aspetto_beni = db.Column(db.String(50), nullable=False, default='Colli')
-    colli_totali = db.Column(db.Integer, nullable=False, default=0)
-    peso_totale_netto = db.Column(db.Float, nullable=False, default=0.0)
-    peso_totale_lordo = db.Column(db.Float, nullable=False, default=0.0)
-    totale_imponibile = db.Column(db.Float, nullable=False, default=0.0)
-    stato = db.Column(db.String(20), nullable=False, default='bozza') # bozza, confermato, fatturato
-    note = db.Column(db.Text, nullable=True)
+class DeliveryNote(Base):
+    id = Column(Integer, primary_key=True)
+    numero = Column(Integer, nullable=False)
+    anno = Column(Integer, nullable=False)
+    numero_completo = Column(String(30), unique=True, nullable=False, index=True)
+    data_documento = Column(Date, nullable=False, default=date.today)
+    data_trasporto = Column(DateTime, nullable=True)
+    cliente_id = Column(Integer, ForeignKey('partner.id'), nullable=False)
+    vettore_id = Column(Integer, ForeignKey('partner.id'), nullable=True)
+    causale_trasporto = Column(String(50), nullable=False, default='Vendita')
+    porto = Column(String(20), nullable=False, default='Franco')
+    aspetto_beni = Column(String(50), nullable=False, default='Colli')
+    colli_totali = Column(Integer, nullable=False, default=0)
+    peso_totale_netto = Column(Float, nullable=False, default=0.0)
+    peso_totale_lordo = Column(Float, nullable=False, default=0.0)
+    totale_imponibile = Column(Float, nullable=False, default=0.0)
+    stato = Column(String(20), nullable=False, default='bozza') # bozza, confermato, fatturato
+    note = Column(Text, nullable=True)
 
-    cliente = db.relationship('Partner', foreign_keys=[cliente_id], backref='ddt_ricevuti')
-    vettore = db.relationship('Partner', foreign_keys=[vettore_id], backref='ddt_trasportati')
-    items = db.relationship('DeliveryNoteItem', backref='delivery_note', cascade='all, delete-orphan', passive_deletes=True)
+    cliente = relationship('Partner', foreign_keys=[cliente_id], backref='ddt_ricevuti')
+    vettore = relationship('Partner', foreign_keys=[vettore_id], backref='ddt_trasportati')
+    items = relationship('DeliveryNoteItem', backref='delivery_note', cascade='all, delete-orphan', passive_deletes=True)
 
     def to_dict(self):
         return {

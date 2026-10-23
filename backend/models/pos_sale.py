@@ -1,28 +1,30 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey, Numeric
+from sqlalchemy.orm import relationship
 from datetime import datetime
 
-class PosSale(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    pos_station_id = db.Column(db.Integer, db.ForeignKey('pos_station.id'), nullable=False)
-    numero_scontrino = db.Column(db.String(50), nullable=False, index=True)
-    data_ora = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    totale_lordo = db.Column(db.Numeric(12, 2), nullable=False)
-    totale_imponibile = db.Column(db.Numeric(12, 2), nullable=False)
-    totale_iva = db.Column(db.Numeric(12, 2), nullable=False)
-    metodo_pagamento = db.Column(db.String(30), nullable=False) # contanti, pos_carta, misto
-    importo_pagato = db.Column(db.Numeric(12, 2), nullable=False)
-    importo_resto = db.Column(db.Numeric(12, 2), nullable=False, default=0.0)
-    stato = db.Column(db.String(20), nullable=False, default='emesso') # emesso, annullato
-    stato_fiscale_rt = db.Column(db.String(20), nullable=False, default='simulato') # simulato, stampato, errore
-    dettaglio_rt_risposta = db.Column(db.Text, nullable=True)
-    journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entry.id'), nullable=True)
-    utente_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    utente_email = db.Column(db.String(120), nullable=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=True)
+class PosSale(Base):
+    id = Column(Integer, primary_key=True)
+    pos_station_id = Column(Integer, ForeignKey('pos_station.id'), nullable=False)
+    numero_scontrino = Column(String(50), nullable=False, index=True)
+    data_ora = Column(DateTime, nullable=False, default=datetime.utcnow)
+    totale_lordo = Column(Numeric(12, 2), nullable=False)
+    totale_imponibile = Column(Numeric(12, 2), nullable=False)
+    totale_iva = Column(Numeric(12, 2), nullable=False)
+    metodo_pagamento = Column(String(30), nullable=False) # contanti, pos_carta, misto
+    importo_pagato = Column(Numeric(12, 2), nullable=False)
+    importo_resto = Column(Numeric(12, 2), nullable=False, default=0.0)
+    stato = Column(String(20), nullable=False, default='emesso') # emesso, annullato
+    stato_fiscale_rt = Column(String(20), nullable=False, default='simulato') # simulato, stampato, errore
+    dettaglio_rt_risposta = Column(Text, nullable=True)
+    journal_entry_id = Column(Integer, ForeignKey('journal_entry.id'), nullable=True)
+    utente_id = Column(Integer, ForeignKey('user.id'), nullable=True)
+    utente_email = Column(String(120), nullable=True)
+    cliente_id = Column(Integer, ForeignKey('partner.id'), nullable=True)
 
-    station = db.relationship('PosStation', backref='sales')
-    journal_entry = db.relationship('JournalEntry', backref='pos_sales')
-    cliente = db.relationship('Partner', backref='pos_sales')
+    station = relationship('PosStation', backref='sales')
+    journal_entry = relationship('JournalEntry', backref='pos_sales')
+    cliente = relationship('Partner', backref='pos_sales')
 
     def to_dict(self):
         return {

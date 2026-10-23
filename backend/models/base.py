@@ -1,5 +1,6 @@
-from flask_sqlalchemy import SQLAlchemy
+import re
 from sqlalchemy import MetaData
+from sqlalchemy.orm import DeclarativeBase, declared_attr
 
 # Define the naming convention
 convention = {
@@ -10,6 +11,14 @@ convention = {
     "pk": "pk_%(table_name)s"
 }
 
-# Initialize SQLAlchemy with the convention
 metadata = MetaData(naming_convention=convention)
-db = SQLAlchemy(metadata=metadata)
+
+class Base(DeclarativeBase):
+    metadata = metadata
+
+    @declared_attr.directive
+    def __tablename__(cls) -> str:
+        # Trasforma CamelCase in snake_case (es: CustomerOrder -> customer_order)
+        # Gestisce sequenze di maiuscole e numeri come faceva Flask-SQLAlchemy
+        s1 = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', cls.__name__)
+        return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s1).lower()

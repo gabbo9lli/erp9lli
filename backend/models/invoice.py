@@ -1,33 +1,35 @@
 from datetime import date
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship, backref
 
-class Invoice(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    numero = db.Column(db.Integer, nullable=False)
-    anno = db.Column(db.Integer, nullable=False)
-    numero_completo = db.Column(db.String(30), unique=True, nullable=False, index=True)
-    tipo_documento = db.Column(db.String(10), nullable=False, default='TD24') # TD24 differita, TD01 immediata
-    data_documento = db.Column(db.Date, nullable=False, default=date.today)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=False)
-    condizioni_pagamento = db.Column(db.String(50), nullable=False, default='30gg fm')
-    esigibilita_iva = db.Column(db.String(1), nullable=False, default='I') # I=immediata, D=differita, S=split payment
-    totale_imponibile = db.Column(db.Float, nullable=False, default=0.0)
-    totale_imposta = db.Column(db.Float, nullable=False, default=0.0)
-    totale_fattura = db.Column(db.Float, nullable=False, default=0.0)
-    castelletto_iva = db.Column(db.JSON, nullable=True)
-    stato = db.Column(db.String(20), nullable=False, default='emessa') # bozza, emessa, inviata_sdi, saldata
-    note = db.Column(db.Text, nullable=True)
+class Invoice(Base):
+    id = Column(Integer, primary_key=True)
+    numero = Column(Integer, nullable=False)
+    anno = Column(Integer, nullable=False)
+    numero_completo = Column(String(30), unique=True, nullable=False, index=True)
+    tipo_documento = Column(String(10), nullable=False, default='TD24') # TD24 differita, TD01 immediata
+    data_documento = Column(Date, nullable=False, default=date.today)
+    cliente_id = Column(Integer, ForeignKey('partner.id'), nullable=False)
+    condizioni_pagamento = Column(String(50), nullable=False, default='30gg fm')
+    esigibilita_iva = Column(String(1), nullable=False, default='I') # I=immediata, D=differita, S=split payment
+    totale_imponibile = Column(Float, nullable=False, default=0.0)
+    totale_imposta = Column(Float, nullable=False, default=0.0)
+    totale_fattura = Column(Float, nullable=False, default=0.0)
+    castelletto_iva = Column(JSON, nullable=True)
+    stato = Column(String(20), nullable=False, default='emessa') # bozza, emessa, inviata_sdi, saldata
+    note = Column(Text, nullable=True)
 
     # Campi per Note di Credito (TD04) e Resi Merci
-    invoice_origine_id = db.Column(db.Integer, db.ForeignKey('invoice.id'), nullable=True)
-    invoice_origine_numero = db.Column(db.String(30), nullable=True)
-    causale_storno = db.Column(db.Text, nullable=True)
-    reintegro_magazzino = db.Column(db.Boolean, nullable=True, default=False)
+    invoice_origine_id = Column(Integer, ForeignKey('invoice.id'), nullable=True)
+    invoice_origine_numero = Column(String(30), nullable=True)
+    causale_storno = Column(Text, nullable=True)
+    reintegro_magazzino = Column(Boolean, nullable=True, default=False)
 
-    cliente = db.relationship('Partner', backref='fatture')
-    invoice_origine = db.relationship('Invoice', remote_side=[id], backref=db.backref('note_credito', lazy='dynamic'))
-    items = db.relationship('InvoiceItem', backref='invoice', cascade='all, delete-orphan', passive_deletes=True)
-    installments = db.relationship('InvoiceInstallment', backref='invoice', cascade='all, delete-orphan', passive_deletes=True, order_by='InvoiceInstallment.numero_rata')
+    cliente = relationship('Partner', backref='fatture')
+    invoice_origine = relationship('Invoice', remote_side=[id], backref=backref('note_credito', lazy='dynamic'))
+    items = relationship('InvoiceItem', backref='invoice', cascade='all, delete-orphan', passive_deletes=True)
+    installments = relationship('InvoiceInstallment', backref='invoice', cascade='all, delete-orphan', passive_deletes=True, order_by='InvoiceInstallment.numero_rata')
 
     def to_dict(self):
         return {

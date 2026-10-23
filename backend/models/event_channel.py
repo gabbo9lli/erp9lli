@@ -1,14 +1,16 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class EventChannel(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    codice = db.Column(db.String(30), unique=True, nullable=False, index=True)
-    nome = db.Column(db.String(100), nullable=False)
-    descrizione = db.Column(db.Text, nullable=True)
-    tipo_dispatcher = db.Column(db.String(30), nullable=False, default='internal') # internal, smtp, webhook
-    configurazione = db.Column(db.JSON, nullable=True)
-    richiede_destinatario = db.Column(db.Boolean, nullable=False, default=False)
-    attivo = db.Column(db.Boolean, nullable=False, default=True)
+class EventChannel(Base):
+    id = Column(Integer, primary_key=True)
+    codice = Column(String(30), unique=True, nullable=False, index=True)
+    nome = Column(String(100), nullable=False)
+    descrizione = Column(Text, nullable=True)
+    tipo_dispatcher = Column(String(30), nullable=False, default='internal') # internal, smtp, webhook
+    configurazione = Column(JSON, nullable=True)
+    richiede_destinatario = Column(Boolean, nullable=False, default=False)
+    attivo = Column(Boolean, nullable=False, default=True)
 
     def to_dict(self):
         return {

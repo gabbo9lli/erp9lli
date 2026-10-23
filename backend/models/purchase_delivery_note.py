@@ -1,19 +1,21 @@
 from datetime import date
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class PurchaseDeliveryNote(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    numero_documento_fornitore = db.Column(db.String(50), nullable=False, index=True)
-    data_documento = db.Column(db.Date, nullable=False)
-    data_ricezione = db.Column(db.Date, nullable=False, default=date.today)
-    fornitore_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=False)
-    colli_totali = db.Column(db.Integer, nullable=False, default=0)
-    peso_totale_netto = db.Column(db.Float, nullable=False, default=0.0)
-    totale_imponibile = db.Column(db.Float, nullable=False, default=0.0)
-    note = db.Column(db.Text, nullable=True)
+class PurchaseDeliveryNote(Base):
+    id = Column(Integer, primary_key=True)
+    numero_documento_fornitore = Column(String(50), nullable=False, index=True)
+    data_documento = Column(Date, nullable=False)
+    data_ricezione = Column(Date, nullable=False, default=date.today)
+    fornitore_id = Column(Integer, ForeignKey('partner.id'), nullable=False)
+    colli_totali = Column(Integer, nullable=False, default=0)
+    peso_totale_netto = Column(Float, nullable=False, default=0.0)
+    totale_imponibile = Column(Float, nullable=False, default=0.0)
+    note = Column(Text, nullable=True)
 
-    fornitore = db.relationship('Partner', backref='ddt_emessi_fornitore')
-    items = db.relationship('PurchaseDeliveryNoteItem', backref='purchase_delivery_note', cascade='all, delete-orphan', passive_deletes=True)
+    fornitore = relationship('Partner', backref='ddt_emessi_fornitore')
+    items = relationship('PurchaseDeliveryNoteItem', backref='purchase_delivery_note', cascade='all, delete-orphan', passive_deletes=True)
 
     def to_dict(self):
         return {

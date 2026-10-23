@@ -1,4 +1,4 @@
-from .base import db
+from .base import Base, metadata
 from .user import User
 from .partner import Partner
 from .product import Product
@@ -30,7 +30,8 @@ from .pos_sale_item import PosSaleItem
 from .ecommerce_sync_log import EcommerceSyncLog
 
 __all__ = [
-    "db",
+    "Base",
+    "metadata",
     "User",
     "Partner",
     "Product",

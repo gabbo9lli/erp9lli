@@ -1,18 +1,20 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey, Numeric
+from sqlalchemy.orm import relationship, backref
 
-class PosSaleItem(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    pos_sale_id = db.Column(db.Integer, db.ForeignKey('pos_sale.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    quantita = db.Column(db.Numeric(10, 3), nullable=False)
-    prezzo_unitario = db.Column(db.Numeric(10, 2), nullable=False)
-    aliquota_iva = db.Column(db.Numeric(5, 2), nullable=False, default=22.0)
-    subtotale = db.Column(db.Numeric(10, 2), nullable=False)
-    lotto = db.Column(db.String(50), nullable=True)
-    data_scadenza = db.Column(db.Date, nullable=True)
+class PosSaleItem(Base):
+    id = Column(Integer, primary_key=True)
+    pos_sale_id = Column(Integer, ForeignKey('pos_sale.id'), nullable=False)
+    product_id = Column(Integer, ForeignKey('product.id'), nullable=False)
+    quantita = Column(Numeric(10, 3), nullable=False)
+    prezzo_unitario = Column(Numeric(10, 2), nullable=False)
+    aliquota_iva = Column(Numeric(5, 2), nullable=False, default=22.0)
+    subtotale = Column(Numeric(10, 2), nullable=False)
+    lotto = Column(String(50), nullable=True)
+    data_scadenza = Column(Date, nullable=True)
 
-    sale = db.relationship('PosSale', backref=db.backref('items', cascade='all, delete-orphan'))
-    product = db.relationship('Product')
+    sale = relationship('PosSale', backref=backref('items', cascade='all, delete-orphan'))
+    product = relationship('Product')
 
     def to_dict(self):
         return {

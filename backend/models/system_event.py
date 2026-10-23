@@ -1,40 +1,42 @@
 from datetime import datetime
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class SystemEvent(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    channel_id = db.Column(db.Integer, db.ForeignKey('event_channel.id'), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('event_category.id'), nullable=True)
-    event_type_id = db.Column(db.Integer, db.ForeignKey('event_type.id'), nullable=True)
-    coda_nome = db.Column(db.String(30), nullable=True)
-    rq_job_id = db.Column(db.String(50), nullable=True)
-    livello = db.Column(db.String(20), nullable=False, default='info') # info, success, warning, error
-    azione = db.Column(db.String(50), nullable=False) # emissione_ddt, sollecito_pallet, etc.
-    titolo = db.Column(db.String(200), nullable=False)
-    descrizione = db.Column(db.Text, nullable=True)
-    payload_dati = db.Column(db.JSON, nullable=True)
-    risultato_dati = db.Column(db.JSON, nullable=True)
-    utente_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    utente_email = db.Column(db.String(120), nullable=True)
-    partner_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=True)
-    destinatario_recapito = db.Column(db.String(200), nullable=True)
-    entita_tipo = db.Column(db.String(30), nullable=True)
-    entita_id = db.Column(db.Integer, nullable=True)
-    is_async = db.Column(db.Boolean, nullable=False, default=False)
-    progresso = db.Column(db.Integer, nullable=False, default=0)
-    stato = db.Column(db.String(20), nullable=False, default='in_coda') # in_coda, in_corso, completato, test, errore
-    tentativi = db.Column(db.Integer, nullable=False, default=0)
-    max_tentativi = db.Column(db.Integer, nullable=False, default=3)
-    data_creazione = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    data_inizio_esecuzione = db.Column(db.DateTime, nullable=True)
-    data_completamento = db.Column(db.DateTime, nullable=True)
-    note_esito = db.Column(db.Text, nullable=True)
+class SystemEvent(Base):
+    id = Column(Integer, primary_key=True)
+    channel_id = Column(Integer, ForeignKey('event_channel.id'), nullable=False)
+    category_id = Column(Integer, ForeignKey('event_category.id'), nullable=True)
+    event_type_id = Column(Integer, ForeignKey('event_type.id'), nullable=True)
+    coda_nome = Column(String(30), nullable=True)
+    rq_job_id = Column(String(50), nullable=True)
+    livello = Column(String(20), nullable=False, default='info') # info, success, warning, error
+    azione = Column(String(50), nullable=False) # emissione_ddt, sollecito_pallet, etc.
+    titolo = Column(String(200), nullable=False)
+    descrizione = Column(Text, nullable=True)
+    payload_dati = Column(JSON, nullable=True)
+    risultato_dati = Column(JSON, nullable=True)
+    utente_id = Column(Integer, ForeignKey('user.id'), nullable=True)
+    utente_email = Column(String(120), nullable=True)
+    partner_id = Column(Integer, ForeignKey('partner.id'), nullable=True)
+    destinatario_recapito = Column(String(200), nullable=True)
+    entita_tipo = Column(String(30), nullable=True)
+    entita_id = Column(Integer, nullable=True)
+    is_async = Column(Boolean, nullable=False, default=False)
+    progresso = Column(Integer, nullable=False, default=0)
+    stato = Column(String(20), nullable=False, default='in_coda') # in_coda, in_corso, completato, test, errore
+    tentativi = Column(Integer, nullable=False, default=0)
+    max_tentativi = Column(Integer, nullable=False, default=3)
+    data_creazione = Column(DateTime, nullable=False, default=datetime.utcnow)
+    data_inizio_esecuzione = Column(DateTime, nullable=True)
+    data_completamento = Column(DateTime, nullable=True)
+    note_esito = Column(Text, nullable=True)
 
-    channel = db.relationship('EventChannel', backref='events')
-    category = db.relationship('EventCategory', backref='events')
-    event_type = db.relationship('EventType', backref='events')
-    user = db.relationship('User', backref='events')
-    partner = db.relationship('Partner', backref='events')
+    channel = relationship('EventChannel', backref='events')
+    category = relationship('EventCategory', backref='events')
+    event_type = relationship('EventType', backref='events')
+    user = relationship('User', backref='events')
+    partner = relationship('Partner', backref='events')
 
     def to_dict(self):
         return {

@@ -1,17 +1,19 @@
 from datetime import datetime, timedelta
 import secrets
 from werkzeug.security import generate_password_hash, check_password_hash
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=True)
-    role = db.Column(db.String(20), default='User') 
-    oauth_provider = db.Column(db.String(50), default='oidc', nullable=True)
-    reset_token = db.Column(db.String(100), unique=True, nullable=True)
-    reset_token_expiry = db.Column(db.DateTime, nullable=True)
+class User(Base):
+    id = Column(Integer, primary_key=True)
+    username = Column(String(50), unique=True, nullable=False)
+    email = Column(String(120), unique=True, nullable=False)
+    password_hash = Column(String(128), nullable=True)
+    role = Column(String(20), default='User') 
+    oauth_provider = Column(String(50), default='oidc', nullable=True)
+    reset_token = Column(String(100), unique=True, nullable=True)
+    reset_token_expiry = Column(DateTime, nullable=True)
 
     def __repr__(self):
         return f'<User {self.username}>'

@@ -1,19 +1,21 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class PurchaseDeliveryNoteItem(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    purchase_delivery_note_id = db.Column(db.Integer, db.ForeignKey('purchase_delivery_note.id', ondelete='CASCADE'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    descrizione = db.Column(db.String(200), nullable=False)
-    unita_misura = db.Column(db.String(10), nullable=False, default='KG')
-    colli = db.Column(db.Integer, nullable=False, default=1)
-    quantita = db.Column(db.Float, nullable=False)
-    prezzo_unitario = db.Column(db.Float, nullable=False, default=0.0)
-    aliquota_iva = db.Column(db.Integer, nullable=False, default=4)
-    lotto = db.Column(db.String(50), nullable=True)
-    data_scadenza = db.Column(db.Date, nullable=True)
+class PurchaseDeliveryNoteItem(Base):
+    id = Column(Integer, primary_key=True)
+    purchase_delivery_note_id = Column(Integer, ForeignKey('purchase_delivery_note.id', ondelete='CASCADE'), nullable=False)
+    product_id = Column(Integer, ForeignKey('product.id'), nullable=False)
+    descrizione = Column(String(200), nullable=False)
+    unita_misura = Column(String(10), nullable=False, default='KG')
+    colli = Column(Integer, nullable=False, default=1)
+    quantita = Column(Float, nullable=False)
+    prezzo_unitario = Column(Float, nullable=False, default=0.0)
+    aliquota_iva = Column(Integer, nullable=False, default=4)
+    lotto = Column(String(50), nullable=True)
+    data_scadenza = Column(Date, nullable=True)
 
-    product = db.relationship('Product')
+    product = relationship('Product')
 
     def to_dict(self):
         return {

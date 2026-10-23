@@ -1,17 +1,19 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
 
-class EcommerceSyncLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    tipo_operazione = db.Column(db.String(30), nullable=False) # import_order, sync_stock, export_catalog
-    external_order_id = db.Column(db.String(50), nullable=True, index=True)
-    customer_order_id = db.Column(db.Integer, db.ForeignKey('customer_order.id'), nullable=True)
-    stato = db.Column(db.String(20), nullable=False, default='success') # success, warning, error
-    payload_ricevuto = db.Column(db.JSON, nullable=True)
-    dettaglio_risposta = db.Column(db.Text, nullable=True)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+class EcommerceSyncLog(Base):
+    id = Column(Integer, primary_key=True)
+    tipo_operazione = Column(String(30), nullable=False) # import_order, sync_stock, export_catalog
+    external_order_id = Column(String(50), nullable=True, index=True)
+    customer_order_id = Column(Integer, ForeignKey('customer_order.id'), nullable=True)
+    stato = Column(String(20), nullable=False, default='success') # success, warning, error
+    payload_ricevuto = Column(JSON, nullable=True)
+    dettaglio_risposta = Column(Text, nullable=True)
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-    order = db.relationship('CustomerOrder', backref='ecommerce_sync_logs')
+    order = relationship('CustomerOrder', backref='ecommerce_sync_logs')
 
     def to_dict(self):
         return {

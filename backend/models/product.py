@@ -1,22 +1,24 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class Product(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    codice = db.Column(db.String(50), unique=True, nullable=False, index=True)
-    descrizione = db.Column(db.String(200), nullable=False)
-    descrizione_en = db.Column(db.String(200), nullable=True)
-    categoria = db.Column(db.String(50), nullable=False, default='fresco') # fresco, trasformato, imballo
-    unita_misura = db.Column(db.String(10), nullable=False, default='KG')
-    peso_netto = db.Column(db.Float, nullable=False, default=0.0)
-    peso_lordo = db.Column(db.Float, nullable=False, default=0.0)
-    tara = db.Column(db.Float, nullable=False, default=0.0)
-    in_scadenza = db.Column(db.Boolean, nullable=False, default=False)
-    scorta_minima = db.Column(db.Float, nullable=False, default=0.0)
-    prezzo_vendita = db.Column(db.Float, nullable=False, default=0.0)
-    prezzo_acquisto = db.Column(db.Float, nullable=False, default=0.0)
-    aliquota_iva = db.Column(db.Integer, nullable=False, default=4)
-    codice_nc = db.Column(db.String(20), nullable=True)
-    attivo = db.Column(db.Boolean, nullable=False, default=True)
+class Product(Base):
+    id = Column(Integer, primary_key=True)
+    codice = Column(String(50), unique=True, nullable=False, index=True)
+    descrizione = Column(String(200), nullable=False)
+    descrizione_en = Column(String(200), nullable=True)
+    categoria = Column(String(50), nullable=False, default='fresco') # fresco, trasformato, imballo
+    unita_misura = Column(String(10), nullable=False, default='KG')
+    peso_netto = Column(Float, nullable=False, default=0.0)
+    peso_lordo = Column(Float, nullable=False, default=0.0)
+    tara = Column(Float, nullable=False, default=0.0)
+    in_scadenza = Column(Boolean, nullable=False, default=False)
+    scorta_minima = Column(Float, nullable=False, default=0.0)
+    prezzo_vendita = Column(Float, nullable=False, default=0.0)
+    prezzo_acquisto = Column(Float, nullable=False, default=0.0)
+    aliquota_iva = Column(Integer, nullable=False, default=4)
+    codice_nc = Column(String(20), nullable=True)
+    attivo = Column(Boolean, nullable=False, default=True)
 
     def to_dict(self):
         return {

@@ -1,16 +1,18 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class PosStation(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    codice = db.Column(db.String(30), unique=True, nullable=False, index=True)
-    nome = db.Column(db.String(100), nullable=False)
-    driver_tipo = db.Column(db.String(30), nullable=False, default='simulator') # simulator, epson_epos_http, custom_tcp, escpos_browser
-    ip_address = db.Column(db.String(50), nullable=True)
-    porta = db.Column(db.Integer, nullable=False, default=80)
-    matricola_rt = db.Column(db.String(50), nullable=True)
-    intestazione = db.Column(db.Text, nullable=True)
-    pie_pagina = db.Column(db.Text, nullable=True)
-    attivo = db.Column(db.Boolean, nullable=False, default=True)
+class PosStation(Base):
+    id = Column(Integer, primary_key=True)
+    codice = Column(String(30), unique=True, nullable=False, index=True)
+    nome = Column(String(100), nullable=False)
+    driver_tipo = Column(String(30), nullable=False, default='simulator') # simulator, epson_epos_http, custom_tcp, escpos_browser
+    ip_address = Column(String(50), nullable=True)
+    porta = Column(Integer, nullable=False, default=80)
+    matricola_rt = Column(String(50), nullable=True)
+    intestazione = Column(Text, nullable=True)
+    pie_pagina = Column(Text, nullable=True)
+    attivo = Column(Boolean, nullable=False, default=True)
 
     def to_dict(self):
         return {

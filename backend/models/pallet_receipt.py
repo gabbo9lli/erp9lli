@@ -1,25 +1,27 @@
 from datetime import date, timedelta
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class PalletReceipt(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    numero = db.Column(db.Integer, nullable=False)
-    anno = db.Column(db.Integer, nullable=False)
-    numero_completo = db.Column(db.String(30), unique=True, nullable=False, index=True)
-    data_emissione = db.Column(db.Date, nullable=False, default=date.today)
-    data_limite_restituzione = db.Column(db.Date, nullable=False)
-    partner_id = db.Column(db.Integer, db.ForeignKey('partner.id'), nullable=False)
-    delivery_note_id = db.Column(db.Integer, db.ForeignKey('delivery_note.id'), nullable=True)
-    tipo = db.Column(db.String(20), nullable=False, default='uscita') # uscita, rientro
-    totale_consegnati = db.Column(db.Integer, nullable=False, default=0)
-    totale_restituiti = db.Column(db.Integer, nullable=False, default=0)
-    saldo_netto = db.Column(db.Integer, nullable=False, default=0)
-    stato = db.Column(db.String(20), nullable=False, default='aperto') # aperto, saldato, fatturato
-    note = db.Column(db.Text, nullable=True)
+class PalletReceipt(Base):
+    id = Column(Integer, primary_key=True)
+    numero = Column(Integer, nullable=False)
+    anno = Column(Integer, nullable=False)
+    numero_completo = Column(String(30), unique=True, nullable=False, index=True)
+    data_emissione = Column(Date, nullable=False, default=date.today)
+    data_limite_restituzione = Column(Date, nullable=False)
+    partner_id = Column(Integer, ForeignKey('partner.id'), nullable=False)
+    delivery_note_id = Column(Integer, ForeignKey('delivery_note.id'), nullable=True)
+    tipo = Column(String(20), nullable=False, default='uscita') # uscita, rientro
+    totale_consegnati = Column(Integer, nullable=False, default=0)
+    totale_restituiti = Column(Integer, nullable=False, default=0)
+    saldo_netto = Column(Integer, nullable=False, default=0)
+    stato = Column(String(20), nullable=False, default='aperto') # aperto, saldato, fatturato
+    note = Column(Text, nullable=True)
 
-    partner = db.relationship('Partner', backref='buoni_pallet')
-    delivery_note = db.relationship('DeliveryNote', backref='buoni_pallet')
-    items = db.relationship('PalletReceiptItem', backref='receipt', cascade='all, delete-orphan', passive_deletes=True)
+    partner = relationship('Partner', backref='buoni_pallet')
+    delivery_note = relationship('DeliveryNote', backref='buoni_pallet')
+    items = relationship('PalletReceiptItem', backref='receipt', cascade='all, delete-orphan', passive_deletes=True)
 
     def to_dict(self):
         today = date.today()

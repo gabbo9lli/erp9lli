@@ -1,13 +1,13 @@
-Flask==2.3.3
-Flask-Cors==3.0.10
-gunicorn==20.1.0 # Add Gunicorn
-Flask-JWT-Extended==4.7.1
-flask-sqlalchemy
-psycopg2-binary  # The Postgres driver for Python
-flask-migrate    # Recommended for handling DB schema changes
-gevent
-flask-socketio
-gevent-websocket
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+pydantic>=2.0.0
+sqlalchemy>=2.0.0
+psycopg2-binary
+alembic
 redis
 rq>=1.15.0
 pytest>=7.0.0
+httpx>=0.24.0
+python-multipart
+pyjwt>=2.8.0
+werkzeug>=2.3.0

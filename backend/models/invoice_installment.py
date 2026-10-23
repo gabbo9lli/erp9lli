@@ -1,14 +1,16 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class InvoiceInstallment(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    invoice_id = db.Column(db.Integer, db.ForeignKey('invoice.id', ondelete='CASCADE'), nullable=False)
-    numero_rata = db.Column(db.Integer, nullable=False, default=1)
-    totale_rate = db.Column(db.Integer, nullable=False, default=1)
-    data_scadenza = db.Column(db.Date, nullable=False)
-    importo = db.Column(db.Float, nullable=False)
-    stato = db.Column(db.String(20), nullable=False, default='aperta') # aperta, incassata, scaduta
-    data_incasso = db.Column(db.Date, nullable=True)
+class InvoiceInstallment(Base):
+    id = Column(Integer, primary_key=True)
+    invoice_id = Column(Integer, ForeignKey('invoice.id', ondelete='CASCADE'), nullable=False)
+    numero_rata = Column(Integer, nullable=False, default=1)
+    totale_rate = Column(Integer, nullable=False, default=1)
+    data_scadenza = Column(Date, nullable=False)
+    importo = Column(Float, nullable=False)
+    stato = Column(String(20), nullable=False, default='aperta') # aperta, incassata, scaduta
+    data_incasso = Column(Date, nullable=True)
 
     def to_dict(self):
         return {

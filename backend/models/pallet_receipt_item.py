@@ -1,14 +1,16 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class PalletReceiptItem(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    pallet_receipt_id = db.Column(db.Integer, db.ForeignKey('pallet_receipt.id', ondelete='CASCADE'), nullable=False)
-    pallet_type_id = db.Column(db.Integer, db.ForeignKey('pallet_type.id'), nullable=False)
-    quantita_consegnata = db.Column(db.Integer, nullable=False, default=0)
-    quantita_restituita = db.Column(db.Integer, nullable=False, default=0)
-    saldo_riga = db.Column(db.Integer, nullable=False, default=0)
+class PalletReceiptItem(Base):
+    id = Column(Integer, primary_key=True)
+    pallet_receipt_id = Column(Integer, ForeignKey('pallet_receipt.id', ondelete='CASCADE'), nullable=False)
+    pallet_type_id = Column(Integer, ForeignKey('pallet_type.id'), nullable=False)
+    quantita_consegnata = Column(Integer, nullable=False, default=0)
+    quantita_restituita = Column(Integer, nullable=False, default=0)
+    saldo_riga = Column(Integer, nullable=False, default=0)
 
-    pallet_type = db.relationship('PalletType')
+    pallet_type = relationship('PalletType')
 
     def to_dict(self):
         return {

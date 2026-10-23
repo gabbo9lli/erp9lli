@@ -1,22 +1,24 @@
 from datetime import date
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class JournalEntry(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    numero = db.Column(db.Integer, nullable=False)
-    anno = db.Column(db.Integer, nullable=False)
-    numero_completo = db.Column(db.String(30), unique=True, nullable=False, index=True)
-    data_registrazione = db.Column(db.Date, nullable=False, default=date.today)
-    data_competenza = db.Column(db.Date, nullable=False, default=date.today)
-    causale = db.Column(db.String(200), nullable=False)
-    causale_id = db.Column(db.Integer, db.ForeignKey('accounting_causal.id'), nullable=True)
-    totale_dare = db.Column(db.Float, nullable=False, default=0.0)
-    totale_avere = db.Column(db.Float, nullable=False, default=0.0)
-    stato = db.Column(db.String(20), nullable=False, default='confermata') # bozza, confermata
-    note = db.Column(db.Text, nullable=True)
+class JournalEntry(Base):
+    id = Column(Integer, primary_key=True)
+    numero = Column(Integer, nullable=False)
+    anno = Column(Integer, nullable=False)
+    numero_completo = Column(String(30), unique=True, nullable=False, index=True)
+    data_registrazione = Column(Date, nullable=False, default=date.today)
+    data_competenza = Column(Date, nullable=False, default=date.today)
+    causale = Column(String(200), nullable=False)
+    causale_id = Column(Integer, ForeignKey('accounting_causal.id'), nullable=True)
+    totale_dare = Column(Float, nullable=False, default=0.0)
+    totale_avere = Column(Float, nullable=False, default=0.0)
+    stato = Column(String(20), nullable=False, default='confermata') # bozza, confermata
+    note = Column(Text, nullable=True)
 
-    causale_obj = db.relationship('AccountingCausal', backref='journal_entries')
-    items = db.relationship('JournalItem', backref='entry', cascade='all, delete-orphan', passive_deletes=True)
+    causale_obj = relationship('AccountingCausal', backref='journal_entries')
+    items = relationship('JournalItem', backref='entry', cascade='all, delete-orphan', passive_deletes=True)
 
     def to_dict(self):
         return {

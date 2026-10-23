@@ -1,22 +1,24 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class OrderItem(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    order_id = db.Column(db.Integer, db.ForeignKey('customer_order.id', ondelete='CASCADE'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    sequenza = db.Column(db.Integer, nullable=False, default=5)
-    descrizione = db.Column(db.String(200), nullable=False)
-    unita_misura = db.Column(db.String(10), nullable=False, default='KG')
-    colli_ordinati = db.Column(db.Integer, nullable=False, default=1)
-    quantita_ordinata = db.Column(db.Float, nullable=False)
-    colli_consegnati = db.Column(db.Integer, nullable=False, default=0)
-    quantita_consegnata = db.Column(db.Float, nullable=False, default=0.0)
-    prezzo_unitario = db.Column(db.Float, nullable=False, default=0.0)
-    aliquota_iva = db.Column(db.Integer, nullable=False, default=4)
-    lotto = db.Column(db.String(50), nullable=True)
-    stato = db.Column(db.String(20), nullable=False, default='aperto') # aperto, chiuso
+class OrderItem(Base):
+    id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, ForeignKey('customer_order.id', ondelete='CASCADE'), nullable=False)
+    product_id = Column(Integer, ForeignKey('product.id'), nullable=False)
+    sequenza = Column(Integer, nullable=False, default=5)
+    descrizione = Column(String(200), nullable=False)
+    unita_misura = Column(String(10), nullable=False, default='KG')
+    colli_ordinati = Column(Integer, nullable=False, default=1)
+    quantita_ordinata = Column(Float, nullable=False)
+    colli_consegnati = Column(Integer, nullable=False, default=0)
+    quantita_consegnata = Column(Float, nullable=False, default=0.0)
+    prezzo_unitario = Column(Float, nullable=False, default=0.0)
+    aliquota_iva = Column(Integer, nullable=False, default=4)
+    lotto = Column(String(50), nullable=True)
+    stato = Column(String(20), nullable=False, default='aperto') # aperto, chiuso
 
-    product = db.relationship('Product')
+    product = relationship('Product')
 
     @property
     def quantita_residua(self):

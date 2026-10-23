@@ -1,21 +1,23 @@
-from .base import db
+from .base import Base
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, Date, DateTime, JSON, ForeignKey
+from sqlalchemy.orm import relationship
 
-class EventType(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    codice = db.Column(db.String(50), unique=True, nullable=False, index=True)
-    nome = db.Column(db.String(100), nullable=False)
-    descrizione = db.Column(db.Text, nullable=True)
-    channel_id = db.Column(db.Integer, db.ForeignKey('event_channel.id'), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('event_category.id'), nullable=True)
-    accounting_causal_id = db.Column(db.Integer, db.ForeignKey('accounting_causal.id'), nullable=True)
-    modalita_esecuzione = db.Column(db.String(20), nullable=False, default='sincrono') # sincrono, asincrono
-    coda_nome = db.Column(db.String(30), nullable=False, default='default') # critical, emails, batch, default
-    livello_default = db.Column(db.String(20), nullable=False, default='info')
-    attivo = db.Column(db.Boolean, nullable=False, default=True)
+class EventType(Base):
+    id = Column(Integer, primary_key=True)
+    codice = Column(String(50), unique=True, nullable=False, index=True)
+    nome = Column(String(100), nullable=False)
+    descrizione = Column(Text, nullable=True)
+    channel_id = Column(Integer, ForeignKey('event_channel.id'), nullable=False)
+    category_id = Column(Integer, ForeignKey('event_category.id'), nullable=True)
+    accounting_causal_id = Column(Integer, ForeignKey('accounting_causal.id'), nullable=True)
+    modalita_esecuzione = Column(String(20), nullable=False, default='sincrono') # sincrono, asincrono
+    coda_nome = Column(String(30), nullable=False, default='default') # critical, emails, batch, default
+    livello_default = Column(String(20), nullable=False, default='info')
+    attivo = Column(Boolean, nullable=False, default=True)
 
-    channel = db.relationship('EventChannel', backref='event_types')
-    category = db.relationship('EventCategory', backref='event_types')
-    accounting_causal = db.relationship('AccountingCausal', backref='event_types')
+    channel = relationship('EventChannel', backref='event_types')
+    category = relationship('EventCategory', backref='event_types')
+    accounting_causal = relationship('AccountingCausal', backref='event_types')
 
     def to_dict(self):
         return {
