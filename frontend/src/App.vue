@@ -233,6 +233,13 @@
             <q-item-section>Attività, Code & Eventi</q-item-section>
           </q-item>
 
+          <q-item clickable v-ripple to="/legacy-migration" active-class="text-primary bg-blue-1 text-weight-bold">
+            <q-item-section avatar>
+              <q-icon name="move_to_inbox" />
+            </q-item-section>
+            <q-item-section>Migrazione Dati Legacy</q-item-section>
+          </q-item>
+
           <q-item clickable v-ripple to="/users" active-class="text-primary bg-blue-1 text-weight-bold">
             <q-item-section avatar>
               <q-icon name="people" />

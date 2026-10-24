@@ -16,6 +16,7 @@ import Pallets from './components/Pallets.vue'
 import CmrManagement from './components/CmrManagement.vue'
 import ActivityCenter from './components/ActivityCenter.vue'
 import BancoM from './components/BancoM.vue'
+import LegacyMigration from './components/LegacyMigration.vue'
 
 const routes = [
   { path: '/', redirect: '/dashboard' },
@@ -35,6 +36,7 @@ const routes = [
   { path: '/invoices', component: Invoices, meta: { requiresAuth: true } },
   { path: '/accounting', component: Accounting, meta: { requiresAuth: true } },
   { path: '/activities', component: ActivityCenter, meta: { requiresAuth: true } },
+  { path: '/legacy-migration', component: LegacyMigration, meta: { requiresAuth: true } },
   { path: '/database', component: DatabaseExplorer, meta: { requiresAuth: true } },
   { path: '/settings', component: () => import('./components/Settings.vue'), meta: { requiresAuth: true }},
   { path: '/users2', redirect: '/users' },
