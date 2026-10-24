@@ -48,7 +48,14 @@ def execute_legacy_migration(
 ):
     if payload.is_async:
         def _async_migration(event):
-            LegacyMigrationService.run_full_migration(db, payload.source_file, payload.options)
+            import database
+            with database.SessionLocal() as session:
+                LegacyMigrationService.run_full_migration(
+                    session,
+                    payload.source_file,
+                    payload.options,
+                    event=event
+                )
 
         ev = dispatch_event(
             channel_code="AUDIT",

@@ -150,5 +150,25 @@ def test_api_migration_endpoints(client, db_session):
     assert res_data["status"] == "success"
     assert res_data["migrated_partners"] > 0
 
+def test_async_migration_isolated_session_and_progress_events(client, db_session):
+    admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
+    client.get('/api/me', headers=admin_headers)
+
+    r = client.post(
+        "/api/migration/execute",
+        json={
+            "source_file": "/Users/novellig/docker_images/gestionale_retebio/GestionaleReteBio2026.accdb",
+            "is_async": True,
+            "options": {"limit_per_table": 10}
+        },
+        headers=admin_headers
+    )
+    assert r.status_code in (200, 201)
+    data = r.json()
+    assert data["status"] == "in_coda"
+    task_id = data["task_id"]
+    assert task_id is not None
+
+
 
 

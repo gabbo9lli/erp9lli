@@ -333,9 +333,10 @@ class LegacyMigrationService:
             sync_prod = db.query(LegacyMigrationSync).filter_by(
                 source_file=filename, entity_type="product", legacy_id=aid
             ).first()
-            p_id = sync_prod.target_id if sync_prod else 1
-
-            prod = db.get(Product, p_id)
+            p_id = sync_prod.target_id if sync_prod else None
+            prod = db.get(Product, p_id) if p_id else None
+            if not prod:
+                prod = db.query(Product).first()
             if not prod:
                 continue
 
@@ -416,7 +417,12 @@ class LegacyMigrationService:
             sync_cli = db.query(LegacyMigrationSync).filter_by(
                 source_file=filename, entity_type="partner", legacy_id=cid
             ).first()
-            cli_id = sync_cli.target_id if sync_cli else 1
+            cli_id = sync_cli.target_id if sync_cli else None
+            if not cli_id:
+                fallback_cli = db.query(Partner).filter_by(tipo="cliente").first() or db.query(Partner).first()
+                cli_id = fallback_cli.id if fallback_cli else None
+            if not cli_id:
+                continue
 
             doc_date = cls.parse_access_date(first_row.get("datafatt")) or date.today()
             anno = doc_date.year
@@ -428,6 +434,7 @@ class LegacyMigrationService:
 
             totale_imponibile = 0.0
             totale_imposta = 0.0
+            castelletto = {}
             items = []
 
             for r_it in inv_rows:
@@ -435,16 +442,28 @@ class LegacyMigrationService:
                 sync_art = db.query(LegacyMigrationSync).filter_by(
                     source_file=filename, entity_type="product", legacy_id=aid
                 ).first()
-                p_id = sync_art.target_id if sync_art else 1
-                prod = db.get(Product, p_id)
+                p_id = sync_art.target_id if sync_art else None
+                prod = db.get(Product, p_id) if p_id else None
+                if not prod:
+                    prod = db.query(Product).first()
+                p_id = prod.id if prod else None
+                if not p_id:
+                    continue
 
                 qta = float(r_it.get("xqta") or r_it.get("usciti") or 1.0)
                 prezzo = float(r_it.get("prezzofatt") or r_it.get("prezzoArt") or (prod.prezzo_vendita if prod else 1.0))
+                aliq = prod.aliquota_iva if (prod and prod.aliquota_iva is not None) else 4
                 imp = round(qta * prezzo, 2)
-                iva = round(imp * 0.04, 2)
+                iva = round(imp * (aliq / 100.0), 2)
 
                 totale_imponibile += imp
                 totale_imposta += iva
+
+                aliq_str = str(aliq)
+                if aliq_str not in castelletto:
+                    castelletto[aliq_str] = {"imponibile": 0.0, "imposta": 0.0}
+                castelletto[aliq_str]["imponibile"] = round(castelletto[aliq_str]["imponibile"] + imp, 2)
+                castelletto[aliq_str]["imposta"] = round(castelletto[aliq_str]["imposta"] + iva, 2)
 
                 items.append(InvoiceItem(
                     product_id=p_id,
@@ -453,7 +472,7 @@ class LegacyMigrationService:
                     colli=1,
                     quantita=qta,
                     prezzo_unitario=prezzo,
-                    aliquota_iva=4,
+                    aliquota_iva=aliq,
                     imponibile_riga=imp
                 ))
 
@@ -471,7 +490,7 @@ class LegacyMigrationService:
                 totale_imponibile=totale_imponibile,
                 totale_imposta=totale_imposta,
                 totale_fattura=totale_fattura,
-                castelletto_iva={"4": {"imponibile": totale_imponibile, "imposta": totale_imposta}},
+                castelletto_iva=castelletto if castelletto else {"4": {"imponibile": totale_imponibile, "imposta": totale_imposta}},
                 stato="emessa",
                 note=f"Importata da Access IdFF={idff}",
                 items=items
@@ -524,12 +543,42 @@ class LegacyMigrationService:
         return migrated_invoices, migrated_installments
 
     @classmethod
-    def run_full_migration(cls, db: Session, source_file: str, options: dict = None) -> Dict[str, Any]:
+    def _notify_event_progress(cls, db: Session, event, progresso: int, descrizione: str):
+        if not event:
+            return
+        try:
+            event.progresso = progresso
+            event.descrizione = descrizione
+            db.commit()
+            from api.websocket_manager import manager
+            manager.broadcast_sync({
+                "type": "SYSTEM_EVENT",
+                "action": "progress",
+                "event": event.to_dict()
+            })
+        except Exception:
+            pass
+
+    @classmethod
+    def run_full_migration(cls, db: Session, source_file: str, options: dict = None, event: Optional[Any] = None) -> Dict[str, Any]:
         options = options or {}
-        p_count = cls.extract_and_migrate_partners(db, source_file)
-        prod_count = cls.extract_and_migrate_products(db, source_file)
-        stock_count = cls.extract_and_migrate_stock_lots(db, source_file)
-        inv_count, inst_count = cls.extract_and_migrate_invoices_and_installments(db, source_file)
+        limit = options.get("limit_per_table")
+
+        cls._notify_event_progress(db, event, 10, f"Avvio scansione database {os.path.basename(source_file)}...")
+        
+        p_count = cls.extract_and_migrate_partners(db, source_file, limit=limit)
+        cls._notify_event_progress(db, event, 25, f"Migrati {p_count} partner e produttori...")
+
+        prod_count = cls.extract_and_migrate_products(db, source_file, limit=limit)
+        cls._notify_event_progress(db, event, 50, f"Migrati {prod_count} articoli biologici...")
+
+        stock_count = cls.extract_and_migrate_stock_lots(db, source_file, limit=limit)
+        cls._notify_event_progress(db, event, 75, f"Migrati {stock_count} lotti di giacenza magazzino...")
+
+        inv_count, inst_count = cls.extract_and_migrate_invoices_and_installments(db, source_file, limit=limit)
+        cls._notify_event_progress(db, event, 95, f"Migrate {inv_count} fatture e {inst_count} rate scadenzario...")
+
+        cls._notify_event_progress(db, event, 100, f"Migrazione completata con successo da {os.path.basename(source_file)}")
 
         return {
             "status": "success",
