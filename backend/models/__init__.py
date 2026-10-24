@@ -28,6 +28,7 @@ from .pos_station import PosStation
 from .pos_sale import PosSale
 from .pos_sale_item import PosSaleItem
 from .ecommerce_sync_log import EcommerceSyncLog
+from .legacy_migration_sync import LegacyMigrationSync
 
 __all__ = [
     "Base",
@@ -61,4 +62,5 @@ __all__ = [
     "PosSale",
     "PosSaleItem",
     "EcommerceSyncLog",
+    "LegacyMigrationSync",
 ]
