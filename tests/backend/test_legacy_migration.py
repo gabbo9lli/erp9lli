@@ -67,3 +67,38 @@ def test_extract_and_migrate_idempotent(db_session):
     assert inst_count >= 0
     assert db_session.query(Invoice).count() > 0
 
+def test_reset_database_safety_token_and_user_preservation(db_session):
+    from services.legacy_migration_service import LegacyMigrationService
+    from models import User, Partner, Product, Invoice
+    from fastapi import HTTPException
+
+    # 1. Token errato rifiutato con HTTPException 400
+    with pytest.raises(HTTPException) as exc_info:
+        LegacyMigrationService.reset_database(db_session, confirm_wipe="WRONG_TOKEN")
+    assert exc_info.value.status_code == 400
+
+    # 2. Popola dati transazionali
+    p = Partner(ragione_sociale="Partner Da Resettare", tipo="cliente")
+    prod = Product(codice="PROD-DEL", descrizione="Articolo Da Resettare")
+    db_session.add_all([p, prod])
+    db_session.commit()
+
+    # Assicurati che esista un utente
+    u = db_session.query(User).first()
+    if not u:
+        u = User(username="admin", email="admin@example.com", role="Admin")
+        db_session.add(u)
+        db_session.commit()
+
+    user_count_before = db_session.query(User).count()
+    assert db_session.query(Partner).count() > 0
+
+    # 3. Esegui reset valido
+    res = LegacyMigrationService.reset_database(db_session, confirm_wipe="RESET_ERP9LLI")
+    assert res["status"] == "success"
+    assert db_session.query(Partner).count() == 0
+    assert db_session.query(Product).count() == 0
+    # Users MAI cancellati!
+    assert db_session.query(User).count() == user_count_before
+
+

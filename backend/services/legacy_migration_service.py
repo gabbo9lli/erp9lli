@@ -534,3 +534,68 @@ class LegacyMigrationService:
             "migrated_invoices": inv_count,
             "migrated_installments": inst_count
         }
+
+    @classmethod
+    def reset_database(cls, db: Session, confirm_wipe: str) -> Dict[str, Any]:
+        from fastapi import HTTPException
+        if confirm_wipe != "RESET_ERP9LLI":
+            raise HTTPException(
+                status_code=400,
+                detail="Token di conferma errato. Per confermare il reset digitare 'RESET_ERP9LLI'"
+            )
+
+        from models import (
+            JournalItem, JournalEntry,
+            InvoiceInstallment, InvoiceItem, Invoice,
+            CmrItem, CmrDocument,
+            DeliveryNoteItem, DeliveryNote,
+            OrderItem, CustomerOrder,
+            PurchaseDeliveryNoteItem, PurchaseDeliveryNote,
+            PalletReceiptItem, PalletReceipt,
+            PosSaleItem, PosSale,
+            EcommerceSyncLog, SystemEvent,
+            LegacyMigrationSync,
+            Product, Partner
+        )
+
+        try:
+            # Delete transactional tables
+            db.query(JournalItem).delete(synchronize_session=False)
+            db.query(JournalEntry).delete(synchronize_session=False)
+            db.query(InvoiceInstallment).delete(synchronize_session=False)
+            db.query(InvoiceItem).delete(synchronize_session=False)
+            db.query(Invoice).delete(synchronize_session=False)
+            db.query(CmrItem).delete(synchronize_session=False)
+            db.query(CmrDocument).delete(synchronize_session=False)
+            db.query(DeliveryNoteItem).delete(synchronize_session=False)
+            db.query(DeliveryNote).delete(synchronize_session=False)
+            db.query(OrderItem).delete(synchronize_session=False)
+            db.query(CustomerOrder).delete(synchronize_session=False)
+            db.query(PurchaseDeliveryNoteItem).delete(synchronize_session=False)
+            db.query(PurchaseDeliveryNote).delete(synchronize_session=False)
+            db.query(PalletReceiptItem).delete(synchronize_session=False)
+            db.query(PalletReceipt).delete(synchronize_session=False)
+            db.query(PosSaleItem).delete(synchronize_session=False)
+            db.query(PosSale).delete(synchronize_session=False)
+            db.query(EcommerceSyncLog).delete(synchronize_session=False)
+            db.query(SystemEvent).delete(synchronize_session=False)
+            db.query(LegacyMigrationSync).delete(synchronize_session=False)
+
+            # Delete catalog tables
+            db.query(Product).delete(synchronize_session=False)
+            db.query(Partner).delete(synchronize_session=False)
+
+            db.commit()
+
+            # Ensure basic chart of accounts and causals
+            seed_chart_of_accounts(db)
+            seed_default_accounting_causals(db)
+
+            return {
+                "status": "success",
+                "message": "Database operativo azzerato con successo. Account utenti preservati."
+            }
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Errore durante il reset del database: {str(e)}")
+
