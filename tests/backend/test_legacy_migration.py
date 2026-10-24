@@ -101,4 +101,54 @@ def test_reset_database_safety_token_and_user_preservation(db_session):
     # Users MAI cancellati!
     assert db_session.query(User).count() == user_count_before
 
+def test_api_migration_endpoints(client, db_session):
+    admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
+    client.get('/api/me', headers=admin_headers)
+
+    # 1. inspect
+    r = client.post(
+        "/api/migration/inspect",
+        json={"source_file": "/Users/novellig/docker_images/gestionale_retebio/GestionaleReteBio2026.accdb"},
+        headers=admin_headers
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["is_valid"] is True
+    assert "T_AllaDataFA" in data["tables"]
+
+    # 2. dry-run
+    r = client.post(
+        "/api/migration/dry-run",
+        json={"source_file": "/Users/novellig/docker_images/gestionale_retebio/GestionaleReteBio2026.accdb"},
+        headers=admin_headers
+    )
+    assert r.status_code == 200
+    dry_data = r.json()
+    assert dry_data["partners_count"] > 0
+    assert dry_data["products_count"] > 0
+
+    # 3. reset con token errato -> 400
+    r = client.post(
+        "/api/migration/reset",
+        json={"confirm_wipe": "WRONG"},
+        headers=admin_headers
+    )
+    assert r.status_code == 400
+
+    # 4. esecuzione reale sincrona
+    r = client.post(
+        "/api/migration/execute",
+        json={
+            "source_file": "/Users/novellig/docker_images/gestionale_retebio/GestionaleReteBio2026.accdb",
+            "is_async": False,
+            "options": {"limit_per_table": 15}
+        },
+        headers=admin_headers
+    )
+    assert r.status_code in (200, 201)
+    res_data = r.json()
+    assert res_data["status"] == "success"
+    assert res_data["migrated_partners"] > 0
+
+
 

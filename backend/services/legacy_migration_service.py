@@ -315,14 +315,20 @@ class LegacyMigrationService:
         migrated = 0
         items_to_process = rows[:limit] if limit else rows
 
+        aggregated_t2 = {}
         for r in items_to_process:
             qta = float(r.get("totgiac") or 0.0)
             if qta <= 0:
                 continue
-
             aid = str(r.get("IdArt"))
             lotto = (r.get("lotto") or "L-LEGACY").strip().replace('"', '')
-            scadenza = cls.parse_access_date(r.get("ScadenzaR"))
+            scad_raw = (r.get("ScadenzaR") or "").strip().replace('"', '')
+            key = (aid, lotto, scad_raw)
+            aggregated_t2[key] = aggregated_t2.get(key, 0.0) + qta
+
+        for (aid, lotto, scad_raw), qta in aggregated_t2.items():
+            scadenza = cls.parse_access_date(scad_raw)
+            sync_key = f"{aid}_{lotto}_{scad_raw}"
 
             sync_prod = db.query(LegacyMigrationSync).filter_by(
                 source_file=filename, entity_type="product", legacy_id=aid
@@ -334,7 +340,7 @@ class LegacyMigrationService:
                 continue
 
             sync_lot = db.query(LegacyMigrationSync).filter_by(
-                source_file=filename, entity_type="stock_lot", legacy_id=f"{aid}_{lotto}"
+                source_file=filename, entity_type="stock_lot", legacy_id=sync_key
             ).first()
             if sync_lot:
                 continue
@@ -358,7 +364,7 @@ class LegacyMigrationService:
             db.add(LegacyMigrationSync(
                 source_file=filename,
                 entity_type="stock_lot",
-                legacy_id=f"{aid}_{lotto}",
+                legacy_id=sync_key,
                 target_id=pnote_item.id
             ))
 

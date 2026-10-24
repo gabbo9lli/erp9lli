@@ -10,7 +10,8 @@ from core.config import settings
 from api.routers import (
     auth, system, partners, products, ecommerce,
     orders, delivery_notes, warehouse, invoices,
-    accounting, pallets, cmr, pos, labels, events
+    accounting, pallets, cmr, pos, labels, events,
+    migration
 )
 
 # Crea tabelle se non esistono (in dev/sqlite)
@@ -57,6 +58,7 @@ app.include_router(cmr.router)
 app.include_router(pos.router)
 app.include_router(labels.router)
 app.include_router(events.router)
+app.include_router(migration.router)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
