@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: erp9lli-postgres
+  namespace: erp9lli
+  labels:
+    app: erp9lli-postgres
+spec:
+  ports:
+    - port: 5432
+      name: postgres
+  clusterIP: None
+  selector:
+    app: erp9lli-postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: erp9lli-postgres
+  namespace: erp9lli
+spec:
+  serviceName: erp9lli-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erp9lli-postgres
+  template:
+    metadata:
+      labels:
+        app: erp9lli-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: erp9lli-secrets
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: erp9lli-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: erp9lli-secrets
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "local-path"
+        resources:
+          requests:
+            storage: 20Gi

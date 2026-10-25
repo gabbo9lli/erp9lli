@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: erp9lli-db-migration
+  namespace: erp9lli
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: erp9lli-db-migration
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: alembic-upgrade
+          image: ghcr.io/gabbo9lli/erp9lli-backend:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Executing Alembic database migrations..."
+              alembic upgrade head
+              echo "Seeding initial accounts and catalog if empty..."
+              python seed.py || true
+              python seed_accounting.py || true
+              python seed_retebio.py || true
+              echo "Migration and seeding completed successfully."
+          envFrom:
+            - configMapRef:
+                name: erp9lli-config
+            - secretRef:
+                name: erp9lli-secrets
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

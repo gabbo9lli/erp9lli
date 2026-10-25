@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erp9lli-worker
+  namespace: erp9lli
+  labels:
+    app: erp9lli-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erp9lli-worker
+  template:
+    metadata:
+      labels:
+        app: erp9lli-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/gabbo9lli/erp9lli-backend:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Starting RQ Worker for Redis Queues..."
+              python -m rq worker -u "$REDIS_URL" critical emails reports default
+          envFrom:
+            - configMapRef:
+                name: erp9lli-config
+            - secretRef:
+                name: erp9lli-secrets
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "384Mi"
+              cpu: "500m"

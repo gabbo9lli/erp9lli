@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erp9lli
+  labels:
+    app.kubernetes.io/name: erp9lli
+    app.kubernetes.io/part-of: erp9lli-suite

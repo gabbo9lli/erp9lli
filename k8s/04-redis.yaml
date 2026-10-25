@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: erp9lli-redis
+  namespace: erp9lli
+  labels:
+    app: erp9lli-redis
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis
+  selector:
+    app: erp9lli-redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erp9lli-redis
+  namespace: erp9lli
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erp9lli-redis
+  template:
+    metadata:
+      labels:
+        app: erp9lli-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"

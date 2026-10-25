@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erp9lli-config
+  namespace: erp9lli
+data:
+  APP_ENV: "production"
+  APP_DEBUG: "false"
+  DB_TYPE: "postgres"
+  REDIS_URL: "redis://erp9lli-redis:6379/0"
+  FORWARDED_ALLOW_IPS: "*"
+  SMTP_ENABLED: "false"
+  SPREE_ENABLED: "false"
