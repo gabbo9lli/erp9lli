@@ -24,7 +24,7 @@ spec:
             - -c
             - |
               echo "Starting RQ Worker for Redis Queues..."
-              python -m rq worker -u "$REDIS_URL" critical emails reports default
+              rq worker -u "$REDIS_URL" critical emails reports default
           envFrom:
             - configMapRef:
                 name: erp9lli-config
