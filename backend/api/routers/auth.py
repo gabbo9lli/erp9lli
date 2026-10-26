@@ -22,6 +22,17 @@ def create_access_token(identity: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm="HS256")
 
 def get_request_identity(request: Request):
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ', 1)[1].strip()
+        try:
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+            email = payload.get("sub")
+            if email:
+                return email, email.split('@')[0], ['Admin']
+        except Exception:
+            pass
+
     email = request.headers.get('X-Forwarded-Email')
     username = request.headers.get('X-Forwarded-Preferred-Username') or request.headers.get('X-Forwarded-User')
     groups_header = request.headers.get('X-Forwarded-Groups', '')

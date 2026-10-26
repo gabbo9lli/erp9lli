@@ -9,7 +9,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     username = Column(String(50), unique=True, nullable=False)
     email = Column(String(120), unique=True, nullable=False)
-    password_hash = Column(String(128), nullable=True)
+    password_hash = Column(String(255), nullable=True)
     role = Column(String(20), default='User') 
     oauth_provider = Column(String(50), default='oidc', nullable=True)
     reset_token = Column(String(100), unique=True, nullable=True)
