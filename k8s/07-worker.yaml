@@ -18,6 +18,7 @@ spec:
       containers:
         - name: worker
           image: ghcr.io/gabbo9lli/erp9lli-backend:latest
+          imagePullPolicy: IfNotPresent
           command:
             - /bin/bash
             - -c

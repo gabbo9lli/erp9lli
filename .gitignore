@@ -5,3 +5,9 @@ instance
 node_modules
 dist
 .pytest_cache
+
+# AWS & Security credentials
+*.pem
+.env.aws
+.env.local
+aws-state.json

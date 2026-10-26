@@ -38,6 +38,7 @@ spec:
       containers:
         - name: backend
           image: ghcr.io/gabbo9lli/erp9lli-backend:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
               name: http

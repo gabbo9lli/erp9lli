@@ -6,15 +6,9 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: "traefik"
     traefik.ingress.kubernetes.io/router.entrypoints: "web,websecure"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
-  tls:
-    - hosts:
-        - gestionale.retebio.it
-      secretName: erp9lli-tls-cert
   rules:
-    - host: gestionale.retebio.it
-      http:
+    - http:
         paths:
           - path: /api
             pathType: Prefix
