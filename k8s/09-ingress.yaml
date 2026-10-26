@@ -1,13 +1,75 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: erp9lli
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# 1. Ingress HTTP (Porta 80): Reindirizzamento obbligatorio 301 verso HTTPS
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: erp9lli-ingress
+  name: erp9lli-ingress-http
   namespace: erp9lli
   annotations:
     kubernetes.io/ingress.class: "traefik"
-    traefik.ingress.kubernetes.io/router.entrypoints: "web,websecure"
+    traefik.ingress.kubernetes.io/router.entrypoints: "web"
+    traefik.ingress.kubernetes.io/router.middlewares: "erp9lli-redirect-to-https@kubernetescrd"
 spec:
   rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: erp9lli-frontend
+                port:
+                  number: 80
+---
+# 2. Ingress HTTPS (Porta 443): Traffico cifrato sicuro con certificato SSL Let's Encrypt
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erp9lli-ingress-tls
+  namespace: erp9lli
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+    - hosts:
+        - 18.200.141.146.sslip.io
+      secretName: erp9lli-tls-cert
+  rules:
+    - host: 18.200.141.146.sslip.io
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: erp9lli-frontend
+                port:
+                  number: 80
     - http:
         paths:
           - path: /api
