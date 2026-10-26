@@ -42,184 +42,74 @@ spec:
       ipStrategy:
         depth: 1
 ---
-# 1. Ingress HTTP (Porta 80): Reindirizzamento obbligatorio 301 verso HTTPS
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: cert-manager.io/v1
+kind: Certificate
 metadata:
-  name: erp9lli-ingress-http
+  name: erp9lli-tls-cert
   namespace: erp9lli
-  annotations:
-    kubernetes.io/ingress.class: "traefik"
-    traefik.ingress.kubernetes.io/router.entrypoints: "web"
-    traefik.ingress.kubernetes.io/router.middlewares: "erp9lli-redirect-to-https@kubernetescrd"
 spec:
-  rules:
-    - http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: erp9lli-frontend
-                port:
-                  number: 80
+  secretName: erp9lli-tls-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - 18.200.141.146.sslip.io
 ---
-# 2. Ingress Endpoints Autenticazione (Porta 443): Rate Limiting Anti Brute-Force + Security Headers
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+# 1. IngressRoute HTTP (Porta 80): Reindirizzamento permanente HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
 metadata:
-  name: erp9lli-ingress-auth
+  name: erp9lli-ingressroute-web
   namespace: erp9lli
-  annotations:
-    kubernetes.io/ingress.class: "traefik"
-    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
-    traefik.ingress.kubernetes.io/router.priority: "100"
-    traefik.ingress.kubernetes.io/router.middlewares: "erp9lli-security-headers@kubernetescrd,erp9lli-auth-rate-limit@kubernetescrd"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
-  tls:
-    - hosts:
-        - 18.200.141.146.sslip.io
-      secretName: erp9lli-tls-cert
-  rules:
-    - host: 18.200.141.146.sslip.io
-      http:
-        paths:
-          - path: /api/signin
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /api/login
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /api/signup
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /api/forgot-password
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /api/reset-password
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-    - http:
-        paths:
-          - path: /api/signin
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /api/login
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /api/signup
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /api/forgot-password
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /api/reset-password
-            pathType: Exact
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
+  entryPoints:
+    - web
+  routes:
+    - match: PathPrefix(`/`)
+      kind: Rule
+      middlewares:
+        - name: redirect-to-https
+      services:
+        - name: erp9lli-frontend
+          port: 80
 ---
-# 3. Ingress HTTPS Generale (Porta 443): Traffico cifrato con Security Headers & HSTS
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+# 2. IngressRoute HTTPS (Porta 443): Cifratura TLS, Security Headers e Rate Limiting
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
 metadata:
-  name: erp9lli-ingress-tls
+  name: erp9lli-ingressroute-websecure
   namespace: erp9lli
-  annotations:
-    kubernetes.io/ingress.class: "traefik"
-    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
-    traefik.ingress.kubernetes.io/router.priority: "10"
-    traefik.ingress.kubernetes.io/router.middlewares: "erp9lli-security-headers@kubernetescrd"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
+  entryPoints:
+    - websecure
+  routes:
+    # 2.1 Endpoint di Autenticazione protetti da Rate Limiter anti brute-force
+    - match: PathPrefix(`/api/signin`) || PathPrefix(`/api/login`) || PathPrefix(`/api/signup`) || PathPrefix(`/api/forgot-password`) || PathPrefix(`/api/reset-password`)
+      kind: Rule
+      priority: 100
+      middlewares:
+        - name: security-headers
+        - name: auth-rate-limit
+      services:
+        - name: erp9lli-backend
+          port: 8000
+    # 2.2 API Backend e WebSockets
+    - match: PathPrefix(`/api`) || PathPrefix(`/ws`)
+      kind: Rule
+      priority: 50
+      middlewares:
+        - name: security-headers
+      services:
+        - name: erp9lli-backend
+          port: 8000
+    # 2.3 Frontend SPA
+    - match: PathPrefix(`/`)
+      kind: Rule
+      priority: 10
+      middlewares:
+        - name: security-headers
+      services:
+        - name: erp9lli-frontend
+          port: 80
   tls:
-    - hosts:
-        - 18.200.141.146.sslip.io
-      secretName: erp9lli-tls-cert
-  rules:
-    - host: 18.200.141.146.sslip.io
-      http:
-        paths:
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /ws
-            pathType: Prefix
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: erp9lli-frontend
-                port:
-                  number: 80
-    - http:
-        paths:
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /ws
-            pathType: Prefix
-            backend:
-              service:
-                name: erp9lli-backend
-                port:
-                  number: 8000
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: erp9lli-frontend
-                port:
-                  number: 80
+    secretName: erp9lli-tls-cert
