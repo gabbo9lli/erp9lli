@@ -17,14 +17,12 @@ CMD ["npm", "run", "dev", "--", "--host"]
 FROM base AS build-stage
 RUN npm run build
 
-# Production Stage
-FROM alpine:latest AS production
-WORKDIR /app
+# Production Stage: Nginx serving the Vue SPA bundle on port 80
+FROM nginx:alpine AS production
+WORKDIR /usr/share/nginx/html
+COPY --from=build-stage /app/dist /usr/share/nginx/html
 
-# Copy files from build-stage to the directory mapped in your compose volume
-COPY --from=build-stage /app/dist /app/dist
+RUN printf 'server {\n    listen 80;\n    location / {\n        root /usr/share/nginx/html;\n        index index.html;\n        try_files $uri $uri/ /index.html;\n    }\n}\n' > /etc/nginx/conf.d/default.conf
 
-RUN ls -la /app/dist
-# This container doesn't need to run a server, 
-# it just needs to exist so the volume is populated.
-CMD ["sleep", "infinity"]
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
