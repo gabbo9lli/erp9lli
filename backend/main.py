@@ -33,14 +33,50 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
         content={"detail": detail, "error": detail if isinstance(detail, str) else str(detail)}
     )
 
-# Configura CORS Middleware
+# Configura CORS Middleware con whitelist origini
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 1. Security Headers Middleware (attivo su dev, staging e produzione)
+@app.middleware("http")
+async def add_security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    if request.url.scheme == "https" or request.headers.get("X-Forwarded-Proto") == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    return response
+
+# 2. Rate Limiting Middleware per gli endpoint di autenticazione
+import time
+from collections import defaultdict
+_auth_rate_limits = defaultdict(list)
+
+@app.middleware("http")
+async def auth_rate_limiting_middleware(request: Request, call_next):
+    path = request.url.path
+    if path in ("/api/signin", "/api/login", "/api/signup", "/api/forgot-password", "/api/reset-password"):
+        if not settings.is_testing or request.headers.get("X-Test-Rate-Limit") == "true":
+            client_ip = request.client.host if request.client else "unknown"
+            now = time.time()
+            window = [t for t in _auth_rate_limits[client_ip] if now - t < 60]
+            _auth_rate_limits[client_ip] = window
+            if len(window) >= 15:
+                return JSONResponse(
+                    status_code=429,
+                    content={"error": "Too Many Requests", "detail": "Troppi tentativi di autenticazione. Riprova tra 1 minuto."}
+                )
+            _auth_rate_limits[client_ip].append(now)
+    return await call_next(request)
 
 # Registra routers
 app.include_router(auth.router)

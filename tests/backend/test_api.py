@@ -155,3 +155,34 @@ def test_websocket_broadcast_async_task_progress(client, db_session):
         assert msg_prog["type"] == "SYSTEM_EVENT"
         assert msg_prog["action"] in ["progress", "completed"]
 
+def test_security_headers_present(client):
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    assert r.headers["X-Frame-Options"] == "DENY"
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert r.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert "Permissions-Policy" in r.headers
+    assert r.headers["X-Robots-Tag"] == "noindex, nofollow"
+
+def test_cors_restriction(client):
+    # Allowed origin: http://localhost:5173
+    r_allowed = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
+    assert r_allowed.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+    # Disallowed origin: http://malicious-website.com
+    r_blocked = client.get("/api/health", headers={"Origin": "http://malicious-website.com"})
+    assert r_blocked.headers.get("access-control-allow-origin") != "http://malicious-website.com"
+
+def test_auth_rate_limiting_middleware(client):
+    headers = {"X-Test-Rate-Limit": "true"}
+    payload = {"email": "test@example.com", "password": "wrong"}
+    statuses = []
+    for _ in range(18):
+        r = client.post("/api/signin", json=payload, headers=headers)
+        statuses.append(r.status_code)
+
+    assert 429 in statuses
+    assert statuses[-1] == 429
+
+
+

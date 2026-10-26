@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     SMTP_ENABLED: bool = False
 
+    CORS_ALLOWED_ORIGINS: str = ""
+
     ENABLED_MODULES: str = "all"
     TESTING: bool = False
 
@@ -37,6 +39,23 @@ class Settings(BaseSettings):
             return True
         active_set = {m.strip().lower() for m in enabled.split(",") if m.strip()}
         return module_name.strip().lower() in active_set
+
+    @property
+    def cors_origins(self) -> list:
+        if self.CORS_ALLOWED_ORIGINS.strip():
+            return [o.strip() for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+        if self.is_dev or self.is_testing:
+            return [
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:5000",
+                "http://127.0.0.1:5000",
+                "http://localhost",
+                "http://127.0.0.1"
+            ]
+        return [
+            "https://18.200.141.146.sslip.io"
+        ]
 
     @property
     def is_dev(self) -> bool:
