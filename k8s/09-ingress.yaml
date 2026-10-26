@@ -8,6 +8,40 @@ spec:
     scheme: https
     permanent: true
 ---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers
+  namespace: erp9lli
+spec:
+  headers:
+    sslRedirect: true
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    stsPreload: true
+    forceSTSHeader: true
+    frameDeny: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    referrerPolicy: "strict-origin-when-cross-origin"
+    customResponseHeaders:
+      X-Robots-Tag: "noindex, nofollow"
+      Permissions-Policy: "camera=(), microphone=(), geolocation=()"
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: auth-rate-limit
+  namespace: erp9lli
+spec:
+  rateLimit:
+    average: 10
+    burst: 15
+    period: 1m
+    sourceCriterion:
+      ipStrategy:
+        depth: 1
+---
 # 1. Ingress HTTP (Porta 80): Reindirizzamento obbligatorio 301 verso HTTPS
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -30,7 +64,101 @@ spec:
                 port:
                   number: 80
 ---
-# 2. Ingress HTTPS (Porta 443): Traffico cifrato sicuro con certificato SSL Let's Encrypt
+# 2. Ingress Endpoints Autenticazione (Porta 443): Rate Limiting Anti Brute-Force + Security Headers
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erp9lli-ingress-auth
+  namespace: erp9lli
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    traefik.ingress.kubernetes.io/router.priority: "100"
+    traefik.ingress.kubernetes.io/router.middlewares: "erp9lli-security-headers@kubernetescrd,erp9lli-auth-rate-limit@kubernetescrd"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+    - hosts:
+        - 18.200.141.146.sslip.io
+      secretName: erp9lli-tls-cert
+  rules:
+    - host: 18.200.141.146.sslip.io
+      http:
+        paths:
+          - path: /api/signin
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /api/login
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /api/signup
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /api/forgot-password
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /api/reset-password
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+    - http:
+        paths:
+          - path: /api/signin
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /api/login
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /api/signup
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /api/forgot-password
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+          - path: /api/reset-password
+            pathType: Exact
+            backend:
+              service:
+                name: erp9lli-backend
+                port:
+                  number: 8000
+---
+# 3. Ingress HTTPS Generale (Porta 443): Traffico cifrato con Security Headers & HSTS
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -39,6 +167,8 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: "traefik"
     traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    traefik.ingress.kubernetes.io/router.priority: "10"
+    traefik.ingress.kubernetes.io/router.middlewares: "erp9lli-security-headers@kubernetescrd"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
   tls:
