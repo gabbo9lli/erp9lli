@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: erp9lli-staging-db-migration
+  namespace: erp9lli-staging
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: erp9lli-staging-db-migration
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrator
+          image: ghcr.io/gabbo9lli/erp9lli-backend:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Waiting for PostgreSQL..."
+              until python -c "
+              import psycopg2, os
+              conn = psycopg2.connect(os.environ['DATABASE_URL'])
+              conn.close()
+              "; do
+                echo "PostgreSQL is unavailable - sleeping 2s"
+                sleep 2
+              done
+              echo "Running Alembic Migrations on staging..."
+              alembic upgrade head
+              echo "Seeding initial staging data..."
+              python seed_retebio.py || true
+              echo "Staging database migration and seeding completed."
+          envFrom:
+            - configMapRef:
+                name: erp9lli-staging-config
+            - secretRef:
+                name: erp9lli-staging-secrets

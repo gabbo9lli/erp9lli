@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: erp9lli-staging-backend
+  namespace: erp9lli-staging
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  selector:
+    app: erp9lli-staging-backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erp9lli-staging-backend
+  namespace: erp9lli-staging
+  labels:
+    app: erp9lli-staging-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erp9lli-staging-backend
+  template:
+    metadata:
+      labels:
+        app: erp9lli-staging-backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/gabbo9lli/erp9lli-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: erp9lli-staging-config
+            - secretRef:
+                name: erp9lli-staging-secrets
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "384Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+      volumes:
+        - name: data-volume
+          hostPath:
+            path: /opt/erp9lli/data
+            type: DirectoryOrCreate

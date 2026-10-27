@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 00-namespace.yaml
+  - 01-configmap.yaml
+  - 02-secrets.yaml
+  - 05-migration-job.yaml
+  - 06-backend.yaml
+  - 07-worker.yaml
+  - 08-frontend.yaml
+  - 09-ingress.yaml

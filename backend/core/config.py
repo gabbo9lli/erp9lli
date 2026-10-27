@@ -62,7 +62,8 @@ class Settings(BaseSettings):
                 "http://127.0.0.1"
             ]
         return [
-            "https://18.200.141.146.sslip.io"
+            "https://18.200.141.146.sslip.io",
+            "https://staging.18.200.141.146.sslip.io"
         ]
 
     @property

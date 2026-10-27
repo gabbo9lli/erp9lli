@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erp9lli-staging-config
+  namespace: erp9lli-staging
+data:
+  APP_ENV: "staging"
+  APP_DEBUG: "false"
+  DB_TYPE: "postgres"
+  DATABASE_URL: "postgresql://erp9lli_staging_user:erp9lli_staging_pass@erp9lli-postgres.erp9lli.svc.cluster.local:5432/erp9lli_staging"
+  REDIS_URL: "redis://erp9lli-redis.erp9lli.svc.cluster.local:6379/1"
+  ENABLED_MODULES: "all"
+  SMTP_ENABLED: "false"

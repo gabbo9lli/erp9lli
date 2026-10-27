@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erp9lli-staging
+  labels:
+    name: erp9lli-staging
+    environment: staging

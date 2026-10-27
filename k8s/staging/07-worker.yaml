@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erp9lli-staging-worker
+  namespace: erp9lli-staging
+  labels:
+    app: erp9lli-staging-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erp9lli-staging-worker
+  template:
+    metadata:
+      labels:
+        app: erp9lli-staging-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/gabbo9lli/erp9lli-backend:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Starting RQ Worker for Staging Redis Queues..."
+              rq worker -u "$REDIS_URL" critical emails reports default
+          envFrom:
+            - configMapRef:
+                name: erp9lli-staging-config
+            - secretRef:
+                name: erp9lli-staging-secrets
+          resources:
+            requests:
+              memory: "96Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+      volumes:
+        - name: data-volume
+          hostPath:
+            path: /opt/erp9lli/data
+            type: DirectoryOrCreate

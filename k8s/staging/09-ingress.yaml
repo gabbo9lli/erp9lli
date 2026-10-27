@@ -1,0 +1,115 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: staging-redirect-to-https
+  namespace: erp9lli-staging
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: staging-security-headers
+  namespace: erp9lli-staging
+spec:
+  headers:
+    sslRedirect: true
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    stsPreload: true
+    forceSTSHeader: true
+    frameDeny: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    referrerPolicy: "strict-origin-when-cross-origin"
+    customResponseHeaders:
+      X-Robots-Tag: "noindex, nofollow"
+      Permissions-Policy: "camera=(), microphone=(), geolocation=()"
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: staging-auth-rate-limit
+  namespace: erp9lli-staging
+spec:
+  rateLimit:
+    average: 10
+    burst: 15
+    period: 1m
+    sourceCriterion:
+      ipStrategy:
+        depth: 1
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: erp9lli-staging-tls-cert
+  namespace: erp9lli-staging
+spec:
+  secretName: erp9lli-staging-tls-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - staging.18.200.141.146.sslip.io
+---
+# 1. IngressRoute HTTP (Porta 80): Reindirizzamento permanente HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: erp9lli-staging-ingressroute-web
+  namespace: erp9lli-staging
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`staging.18.200.141.146.sslip.io`)
+      kind: Rule
+      middlewares:
+        - name: staging-redirect-to-https
+      services:
+        - name: erp9lli-staging-frontend
+          port: 80
+---
+# 2. IngressRoute HTTPS (Porta 443): Cifratura TLS, Security Headers e Rate Limiting per Staging
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: erp9lli-staging-ingressroute-websecure
+  namespace: erp9lli-staging
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # 2.1 Endpoint di Autenticazione con Rate Limiter anti brute-force
+    - match: Host(`staging.18.200.141.146.sslip.io`) && (PathPrefix(`/api/signin`) || PathPrefix(`/api/login`) || PathPrefix(`/api/signup`) || PathPrefix(`/api/forgot-password`) || PathPrefix(`/api/reset-password`))
+      kind: Rule
+      priority: 100
+      middlewares:
+        - name: staging-security-headers
+        - name: staging-auth-rate-limit
+      services:
+        - name: erp9lli-staging-backend
+          port: 8000
+    # 2.2 API Backend e WebSockets Staging
+    - match: Host(`staging.18.200.141.146.sslip.io`) && (PathPrefix(`/api`) || PathPrefix(`/ws`))
+      kind: Rule
+      priority: 50
+      middlewares:
+        - name: staging-security-headers
+      services:
+        - name: erp9lli-staging-backend
+          port: 8000
+    # 2.3 Frontend SPA Staging
+    - match: Host(`staging.18.200.141.146.sslip.io`) && PathPrefix(`/`)
+      kind: Rule
+      priority: 10
+      middlewares:
+        - name: staging-security-headers
+      services:
+        - name: erp9lli-staging-frontend
+          port: 80
+  tls:
+    secretName: erp9lli-staging-tls-cert

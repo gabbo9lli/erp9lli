@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: erp9lli-staging-frontend
+  namespace: erp9lli-staging
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+  selector:
+    app: erp9lli-staging-frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erp9lli-staging-frontend
+  namespace: erp9lli-staging
+  labels:
+    app: erp9lli-staging-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erp9lli-staging-frontend
+  template:
+    metadata:
+      labels:
+        app: erp9lli-staging-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/gabbo9lli/erp9lli-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "20m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
