@@ -35,3 +35,16 @@ def test_json_log_formatter_includes_request_id():
     assert parsed["message"] == "Messaggio di test log"
     assert parsed["request_id"] == "custom-trace-uuid-999"
 
+def test_prometheus_metrics_endpoint(client):
+    # Eseguiamo una chiamata per incrementare i contatori
+    client.get("/api/health")
+
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    content = r.text
+    assert "erp9lli_http_requests_total" in content
+    assert "erp9lli_http_request_duration_seconds" in content
+    assert "erp9lli_websocket_active_connections" in content
+    assert "erp9lli_orders_created_total" in content
+
+

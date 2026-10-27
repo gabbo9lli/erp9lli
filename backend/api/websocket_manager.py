@@ -1,6 +1,7 @@
 import asyncio
 from typing import List, Optional
 from fastapi import WebSocket
+from core.metrics import ws_connections_active, ws_broadcast_total
 
 class ConnectionManager:
     def __init__(self):
@@ -13,6 +14,7 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        ws_connections_active.set(len(self.active_connections))
         try:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -21,8 +23,11 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+            ws_connections_active.set(len(self.active_connections))
 
     async def broadcast(self, message: dict):
+        action = message.get("action", "unknown")
+        ws_broadcast_total.inc(action=action)
         for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)

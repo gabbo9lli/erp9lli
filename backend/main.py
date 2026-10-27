@@ -34,7 +34,14 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
     )
 
 import uuid
+import time
 from core.logging_config import request_id_ctx
+from core.metrics import (
+    registry as metrics_registry,
+    http_requests_total,
+    http_request_duration_seconds,
+    http_requests_in_progress
+)
 
 # 0. Correlation ID Middleware (X-Request-ID propagation)
 @app.middleware("http")
@@ -49,6 +56,31 @@ async def correlation_id_middleware(request: Request, call_next):
         return response
     finally:
         request_id_ctx.reset(token)
+
+# 0.1 Prometheus Metrics Middleware
+@app.middleware("http")
+async def prometheus_metrics_middleware(request: Request, call_next):
+    if request.url.path == "/metrics":
+        return await call_next(request)
+
+    endpoint = request.url.path
+    method = request.method
+    http_requests_in_progress.inc(method=method, endpoint=endpoint)
+    start_time = time.time()
+    try:
+        response = await call_next(request)
+        status_code = str(response.status_code)
+        duration = time.time() - start_time
+        http_requests_total.inc(method=method, endpoint=endpoint, status=status_code)
+        http_request_duration_seconds.observe(duration, method=method, endpoint=endpoint)
+        return response
+    except Exception:
+        duration = time.time() - start_time
+        http_requests_total.inc(method=method, endpoint=endpoint, status="500")
+        http_request_duration_seconds.observe(duration, method=method, endpoint=endpoint)
+        raise
+    finally:
+        http_requests_in_progress.dec(method=method, endpoint=endpoint)
 
 # Configura CORS Middleware con whitelist origini
 app.add_middleware(
@@ -123,6 +155,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+@app.get("/metrics", include_in_schema=False)
+def get_metrics_endpoint():
+    from fastapi.responses import Response
+    text = metrics_registry.generate_openmetrics_text()
+    return Response(
+        content=text,
+        media_type="text/plain; version=0.0.4; charset=utf-8"
+    )
 
 if __name__ == "__main__":
     import uvicorn
