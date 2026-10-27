@@ -30,7 +30,10 @@ def dry_run_legacy_database(
     current_user: User = Depends(require_auth(roles=['Admin'])),
     db: Session = Depends(get_db)
 ):
-    return LegacyMigrationService.dry_run(payload.source_file)
+    res = LegacyMigrationService.dry_run(payload.source_file)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("error"))
+    return res
 
 @router.post("/reset", response_model=MigrationResetResponse)
 def reset_database_endpoint(

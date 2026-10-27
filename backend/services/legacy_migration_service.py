@@ -30,7 +30,26 @@ class LegacyMigrationService:
         return tool_name
 
     @classmethod
+    def _resolve_file_path(cls, source_file: str) -> str:
+        if os.path.exists(source_file):
+            return source_file
+        filename = os.path.basename(source_file)
+        candidates = [
+            os.path.join("/app/data", filename),
+            os.path.join(os.getcwd(), "data", filename),
+            os.path.join(os.getcwd(), "backend", "data", filename),
+            os.path.join("/opt/erp9lli/data", filename),
+            os.path.join("/tmp", filename),
+            filename
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        return source_file
+
+    @classmethod
     def _export_table_rows(cls, source_file: str, table_name: str, delimiter: str = '|') -> List[Dict[str, str]]:
+        source_file = cls._resolve_file_path(source_file)
         if not os.path.exists(source_file):
             raise FileNotFoundError(f"Database file not found: {source_file}")
 
@@ -67,8 +86,9 @@ class LegacyMigrationService:
 
     @classmethod
     def inspect_database(cls, source_file: str) -> Dict[str, Any]:
+        source_file = cls._resolve_file_path(source_file)
         if not os.path.exists(source_file):
-            return {"is_valid": False, "error": "File non trovato", "source_file": source_file, "tables": []}
+            return {"is_valid": False, "error": f"File non trovato: {source_file}", "source_file": source_file, "tables": []}
 
         tool = cls._find_mdb_tool('mdb-tables')
         try:
@@ -88,7 +108,17 @@ class LegacyMigrationService:
     def dry_run(cls, source_file: str) -> Dict[str, Any]:
         info = cls.inspect_database(source_file)
         if not info.get("is_valid"):
-            return {"status": "error", "error": info.get("error", "Database non valido")}
+            return {
+                "status": "error",
+                "error": info.get("error", "Database non valido"),
+                "source_file": source_file,
+                "partners_count": 0,
+                "products_count": 0,
+                "stock_lots_count": 0,
+                "invoices_count": 0,
+                "installments_count": 0,
+                "estimated_seconds": 0
+            }
 
         tables = info.get("tables", [])
 
