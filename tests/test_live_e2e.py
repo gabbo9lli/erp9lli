@@ -156,9 +156,9 @@ try:
 except Exception as e:
     record("11. POS Stations & BancoM API", False, str(e))
 
-# 11b. Prometheus OpenMetrics Endpoint
+# 11b. Prometheus OpenMetrics Endpoint (/api/metrics)
 try:
-    resp = get("/metrics")
+    resp = get("/api/metrics", headers=auth_headers)
     content = resp.read().decode()
     has_metrics = "erp9lli_http_requests_total" in content and "erp9lli_http_request_duration_seconds" in content
     record("11b. Prometheus OpenMetrics Endpoint", has_metrics, "Found erp9lli_http_requests_total and histograms")

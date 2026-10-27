@@ -102,3 +102,14 @@ async def trigger_test_alert(
         "message": "Procedura di test alert eseguita",
         "alert_result": res
     }
+
+@router.get("/metrics")
+def get_metrics_authenticated_api(
+    current_user: User = Depends(require_auth(roles=['Admin']))
+):
+    from fastapi.responses import Response
+    from core.metrics import registry as metrics_registry
+    return Response(
+        content=metrics_registry.generate_openmetrics_text(),
+        media_type="text/plain; version=0.0.4; charset=utf-8"
+    )
