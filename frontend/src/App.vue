@@ -350,7 +350,10 @@ onUnmounted(() => {
 
 const checkAuth = async () => {
   try {
-    const res = await fetch('/api/me')
+    const token = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem('token') : null
+    const res = token 
+      ? await fetch('/api/me', { headers: { 'Authorization': `Bearer ${token}` } })
+      : await fetch('/api/me')
     if (res.ok) {
       const data = await res.json()
       if (data.authenticated) {
@@ -387,6 +390,7 @@ onMounted(() => {
 const handleLogout = () => {
   if (typeof window !== 'undefined' && window.localStorage) {
     window.localStorage.removeItem('user_session')
+    window.localStorage.removeItem('token')
   }
   isLoggedIn.value = false
   currentUser.value = ''

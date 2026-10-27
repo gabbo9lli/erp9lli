@@ -135,6 +135,9 @@ const handleAction = async () => {
         setFeedback(view.value === 'login' ? "Success! Redirecting..." : "Account created!", "success")
         if (view.value === 'login') {
           localStorage.setItem('user_session', data.user)
+          if (data.access_token) {
+            localStorage.setItem('token', data.access_token)
+          }
           window.dispatchEvent(new CustomEvent('auth-change'));
           router.push('/dashboard');
           // window.location.href = '/dashboard' // Navigate on success

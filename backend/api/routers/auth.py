@@ -126,7 +126,8 @@ async def login(request: Request, db: Session = Depends(get_db)):
 
     user = db.query(User).filter_by(email=email).first()
     if user and user.check_password(password):
-        return {"message": "Logged in", "user": user.email}
+        token = create_access_token(identity=user.email)
+        return {"message": "Logged in", "user": user.email, "access_token": token}
 
     return JSONResponse(status_code=401, content={"error": "Invalid credentials"})
 

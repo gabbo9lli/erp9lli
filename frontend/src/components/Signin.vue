@@ -47,7 +47,10 @@ const handleAuth = async () => {
     
     if (isLogin.value) {
       localStorage.setItem('token', response.data.access_token)
+      localStorage.setItem('user_session', email.value)
+      window.dispatchEvent(new CustomEvent('auth-change'))
       message.value = "Successfully Signed In!"
+      window.location.href = '/dashboard'
     } else {
       message.value = "Successfully Signed Up! Please Sign In."
       isLogin.value = true

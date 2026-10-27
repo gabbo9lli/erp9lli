@@ -14,6 +14,17 @@ if (import.meta.env.VITE_API_URL) {
   axios.defaults.baseURL = import.meta.env.VITE_API_URL
 }
 
+// Interceptor globale per iniettare automaticamente il Bearer Token JWT salvato in localStorage
+axios.interceptors.request.use((config) => {
+  const token = (typeof window !== 'undefined' && window.localStorage) ? window.localStorage.getItem('token') : null
+  if (token && !config.headers['Authorization']) {
+    config.headers['Authorization'] = `Bearer ${token}`
+  }
+  return config
+}, (error) => {
+  return Promise.reject(error)
+})
+
 app.use(Quasar, {
   plugins: {
     Notify,
