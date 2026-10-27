@@ -1,0 +1,201 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erp9lli-grafana-datasources
+  namespace: erp9lli
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://erp9lli-prometheus:9090
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erp9lli-grafana-dashboards-provider
+  namespace: erp9lli
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: true
+        editable: true
+        options:
+          path: /etc/grafana/provisioning/dashboards/json
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erp9lli-grafana-dashboard-erp9lli
+  namespace: erp9lli
+data:
+  erp9lli-dashboard.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "title": "Throughput API (RPS)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Prometheus" },
+              "expr": "sum(rate(erp9lli_http_requests_total[1m])) by (status)",
+              "legendFormat": "HTTP {{status}}"
+            }
+          ]
+        },
+        {
+          "title": "Latenza Media API (ms)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Prometheus" },
+              "expr": "rate(erp9lli_http_request_duration_seconds_sum[1m]) / rate(erp9lli_http_request_duration_seconds_count[1m]) * 1000",
+              "legendFormat": "{{endpoint}}"
+            }
+          ]
+        },
+        {
+          "title": "Client WebSocket Live",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Prometheus" },
+              "expr": "erp9lli_websocket_active_connections"
+            }
+          ]
+        },
+        {
+          "title": "Code Redis RQ (Job in attesa)",
+          "type": "bargauge",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Prometheus" },
+              "expr": "erp9lli_rq_queue_jobs_count",
+              "legendFormat": "{{queue}}"
+            }
+          ]
+        },
+        {
+          "title": "Ordini e Fatture Emesse (Cumulativo)",
+          "type": "timeseries",
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 8 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Prometheus" },
+              "expr": "erp9lli_orders_created_total",
+              "legendFormat": "Ordini Clienti"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "Prometheus" },
+              "expr": "sum(erp9lli_invoices_created_total)",
+              "legendFormat": "Fatture Emesse"
+            }
+          ]
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": ["erp9lli"],
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "erp9lli Operational Overview",
+      "uid": "erp9lli-ops-overview",
+      "version": 1
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erp9lli-grafana
+  namespace: erp9lli
+  labels:
+    app: erp9lli-grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erp9lli-grafana
+  template:
+    metadata:
+      labels:
+        app: erp9lli-grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.1.0
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"
+            - name: GF_SERVER_ROOT_URL
+              value: "%(protocol)s://%(domain)s/grafana/"
+            - name: GF_SERVER_SERVE_FROM_SUB_PATH
+              value: "true"
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          ports:
+            - containerPort: 3000
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 384Mi
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards-json
+              mountPath: /etc/grafana/provisioning/dashboards/json
+            - name: storage
+              mountPath: /var/lib/grafana
+      volumes:
+        - name: datasources
+          configMap:
+            name: erp9lli-grafana-datasources
+        - name: dashboards-provider
+          configMap:
+            name: erp9lli-grafana-dashboards-provider
+        - name: dashboards-json
+          configMap:
+            name: erp9lli-grafana-dashboard-erp9lli
+        - name: storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erp9lli-grafana
+  namespace: erp9lli
+spec:
+  selector:
+    app: erp9lli-grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http

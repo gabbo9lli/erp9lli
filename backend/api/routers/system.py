@@ -113,3 +113,10 @@ def get_metrics_authenticated_api(
         content=metrics_registry.generate_openmetrics_text(),
         media_type="text/plain; version=0.0.4; charset=utf-8"
     )
+
+@router.get("/metrics/summary")
+def get_metrics_summary_api(
+    current_user: User = Depends(require_auth())
+):
+    from core.metrics import get_metrics_summary
+    return get_metrics_summary()

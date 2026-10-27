@@ -209,3 +209,82 @@ migration_runs_total = registry.register(Counter(
     "Esecuzioni del modulo di migrazione",
     labels=["status"]
 ))
+
+def get_metrics_summary() -> dict:
+    total_reqs = 0.0
+    status_2xx = 0
+    status_4xx = 0
+    status_5xx = 0
+
+    with http_requests_total._lock:
+        for k, v in http_requests_total._values.items():
+            total_reqs += v
+            lbl_dict = dict(k)
+            st = lbl_dict.get("status", "")
+            if st.startswith("2"):
+                status_2xx += int(v)
+            elif st.startswith("4"):
+                status_4xx += int(v)
+            elif st.startswith("5"):
+                status_5xx += int(v)
+
+    total_duration_sec = 0.0
+    total_samples = 0
+    with http_request_duration_seconds._lock:
+        for k, s in http_request_duration_seconds._sums.items():
+            total_duration_sec += s
+        for k, cnt in http_request_duration_seconds._totals.items():
+            total_samples += cnt
+
+    avg_latency_ms = round((total_duration_sec / max(1, total_samples)) * 1000, 2) if total_samples > 0 else 0.0
+    success_rate = round((status_2xx / max(1, total_reqs)) * 100, 1) if total_reqs > 0 else 100.0
+
+    active_ws = 0
+    with ws_connections_active._lock:
+        for v in ws_connections_active._values.values():
+            active_ws = int(v)
+
+    total_broadcasts = 0
+    with ws_broadcast_total._lock:
+        for v in ws_broadcast_total._values.values():
+            total_broadcasts += int(v)
+
+    total_orders = sum(orders_created_total._values.values()) if orders_created_total._values else 0
+    total_invoices = sum(invoices_created_total._values.values()) if invoices_created_total._values else 0
+    total_pos = sum(pos_sales_created_total._values.values()) if pos_sales_created_total._values else 0
+
+    queues = {"critical": 0, "emails": 0, "reports": 0, "default": 0, "total_pending": 0, "total_failed": 0}
+    try:
+        from services.event_dispatcher import get_redis_connection
+        r_conn = get_redis_connection()
+        if r_conn:
+            from rq import Queue
+            for q_name in ["critical", "emails", "reports", "default"]:
+                q = Queue(q_name, connection=r_conn)
+                cnt = len(q)
+                queues[q_name] = cnt
+                queues["total_pending"] += cnt
+    except Exception:
+        pass
+
+    return {
+        "http": {
+            "total_requests": int(total_reqs),
+            "avg_latency_ms": avg_latency_ms,
+            "success_rate_pct": success_rate,
+            "status_2xx": status_2xx,
+            "status_4xx": status_4xx,
+            "status_5xx": status_5xx
+        },
+        "websockets": {
+            "active_clients": active_ws,
+            "total_broadcasts": total_broadcasts
+        },
+        "queues_rq": queues,
+        "business_totals": {
+            "orders": int(total_orders),
+            "invoices": int(total_invoices),
+            "pos_sales": int(total_pos)
+        }
+    }
+

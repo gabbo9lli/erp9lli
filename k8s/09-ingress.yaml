@@ -102,7 +102,16 @@ spec:
       services:
         - name: erp9lli-backend
           port: 8000
-    # 2.3 Frontend SPA
+    # 2.3 Dashboard Grafana
+    - match: PathPrefix(`/grafana`)
+      kind: Rule
+      priority: 40
+      middlewares:
+        - name: security-headers
+      services:
+        - name: erp9lli-grafana
+          port: 3000
+    # 2.4 Frontend SPA
     - match: PathPrefix(`/`)
       kind: Rule
       priority: 10

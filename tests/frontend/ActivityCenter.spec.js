@@ -281,4 +281,52 @@ describe('ActivityCenter.vue', () => {
     expect(wrapper.text()).toContain('Nuovo Ordine RealTime #99 (Aggiornato)')
     expect(wrapper.text()).toContain('75')
   })
+
+  it('renders metrics & monitoring tab with KPI cards and Grafana button', async () => {
+    vi.spyOn(axios, 'get').mockImplementation((url) => {
+      if (url === '/api/events') return Promise.resolve({ data: [] })
+      if (url === '/api/events/channels') return Promise.resolve({ data: [] })
+      if (url === '/api/events/types') return Promise.resolve({ data: [] })
+      if (url === '/api/events/queues') return Promise.resolve({ data: [] })
+      if (url === '/api/metrics/summary') {
+        return Promise.resolve({
+          data: {
+            http: { total_requests: 1250, avg_latency_ms: 3.5, success_rate_pct: 99.8, status_2xx: 1248, status_4xx: 2, status_5xx: 0 },
+            websockets: { active_clients: 3, total_broadcasts: 42 },
+            queues_rq: { total_pending: 1, total_failed: 0, critical: 0, emails: 1, reports: 0, default: 0 },
+            business_totals: { orders: 15, invoices: 8, pos_sales: 24 }
+          }
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    const wrapper = mount(ActivityCenter, {
+      global: {
+        stubs: {
+          'q-btn': { template: '<button>{{ label }}<slot /></button>', props: ['label'] },
+          'q-badge': { template: '<span><slot /></span>' },
+          'q-tabs': { template: '<div><slot /></div>' },
+          'q-tab': { template: '<div>{{ label }}<slot /></div>', props: ['label'] },
+          'q-tab-panels': { template: '<div><slot /></div>' },
+          'q-tab-panel': { template: '<div><slot /></div>' },
+          'q-card': { template: '<div><slot /></div>' },
+          'q-card-section': { template: '<div><slot /></div>' },
+          'q-icon': { template: '<i></i>' },
+          'q-separator': { template: '<hr />' }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Metriche & Ops')
+    expect(wrapper.text()).toContain('Apri Grafana Dashboard ↗')
+    expect(wrapper.text()).toContain('LATENZA MEDIA API')
+    expect(wrapper.text()).toContain('3.5')
+    expect(wrapper.text()).toContain('WEBSOCKET CONNESSI')
+    expect(wrapper.text()).toContain('3')
+    expect(wrapper.text()).toContain('TRAFFICO & AFFIDABILITÀ')
+    expect(wrapper.text()).toContain('99.8%')
+  })
 })
+

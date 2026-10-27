@@ -12,3 +12,5 @@ resources:
   - 07-worker.yaml
   - 08-frontend.yaml
   - 09-ingress.yaml
+  - 10-prometheus.yaml
+  - 11-grafana.yaml

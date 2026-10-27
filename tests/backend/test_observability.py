@@ -81,5 +81,23 @@ def test_api_system_test_alert_endpoint(client, db_session):
     data = r.json()
     assert data["status"] == "success"
 
+def test_api_metrics_summary_endpoint(client, db_session):
+    admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
+    client.get('/api/me', headers=admin_headers)
+
+    client.get('/api/health')
+
+    r = client.get('/api/metrics/summary', headers=admin_headers)
+    assert r.status_code == 200
+    data = r.json()
+    assert "http" in data
+    assert "websockets" in data
+    assert "queues_rq" in data
+    assert "business_totals" in data
+    assert data["http"]["total_requests"] >= 1
+    assert "avg_latency_ms" in data["http"]
+    assert "active_clients" in data["websockets"]
+
+
 
 

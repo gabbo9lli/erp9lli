@@ -20,6 +20,7 @@
       <q-tab name="outbox" label="Comunicazioni & Email" icon="forward_to_inbox" />
       <q-tab name="channels" label="Anagrafica Canali" icon="settings_input_component" />
       <q-tab name="types" label="Catalogo Eventi & Code" icon="tune" />
+      <q-tab name="metrics" label="Metriche & Ops" icon="insights" />
     </q-tabs>
 
     <q-separator class="q-mb-md" />
@@ -262,6 +263,160 @@
           </template>
         </q-table>
       </q-tab-panel>
+
+      <!-- TAB 6: METRICHE & OPS -->
+      <q-tab-panel name="metrics" class="q-pa-none">
+        <div class="row items-center justify-between q-mb-md">
+          <div class="text-subtitle1 text-weight-bold">
+            Monitoraggio Operativo & Prestazioni di Sistema
+          </div>
+          <div class="row q-gutter-sm">
+            <q-btn
+              color="secondary"
+              icon="refresh"
+              label="Ricarica Dati"
+              outline
+              :loading="loadingMetrics"
+              @click="fetchMetricsSummary"
+            />
+            <q-btn
+              color="primary"
+              icon="open_in_new"
+              label="Apri Grafana Dashboard ↗"
+              unelevated
+              @click="openGrafana"
+            />
+          </div>
+        </div>
+
+        <!-- 4 Card KPI Riassuntive -->
+        <div class="row q-col-gutter-md q-mb-lg">
+          <!-- KPI 1: Latenza Media API -->
+          <div class="col-12 col-sm-6 col-md-3">
+            <q-card class="bg-blue-1 text-blue-9" flat bordered>
+              <q-card-section>
+                <div class="row items-center justify-between no-wrap">
+                  <div class="text-caption text-weight-medium">LATENZA MEDIA API</div>
+                  <q-icon name="speed" size="24px" color="blue-7" />
+                </div>
+                <div class="text-h4 text-weight-bolder q-mt-sm">
+                  {{ metricsSummary.http?.avg_latency_ms || 0 }} <span class="text-caption">ms</span>
+                </div>
+                <div class="text-caption text-grey-8 q-mt-xs">
+                  Tempo medio di risposta endpoint
+                </div>
+              </q-card-section>
+            </q-card>
+          </div>
+
+          <!-- KPI 2: Client WebSockets Live -->
+          <div class="col-12 col-sm-6 col-md-3">
+            <q-card class="bg-green-1 text-green-9" flat bordered>
+              <q-card-section>
+                <div class="row items-center justify-between no-wrap">
+                  <div class="text-caption text-weight-medium">WEBSOCKET CONNESSI</div>
+                  <q-icon name="wifi" size="24px" color="green-7" />
+                </div>
+                <div class="text-h4 text-weight-bolder q-mt-sm">
+                  {{ metricsSummary.websockets?.active_clients || 0 }} <span class="text-caption">client</span>
+                </div>
+                <div class="text-caption text-grey-8 q-mt-xs">
+                  {{ metricsSummary.websockets?.total_broadcasts || 0 }} notifiche broadcast totali
+                </div>
+              </q-card-section>
+            </q-card>
+          </div>
+
+          <!-- KPI 3: Richieste & Affidabilità -->
+          <div class="col-12 col-sm-6 col-md-3">
+            <q-card class="bg-purple-1 text-purple-9" flat bordered>
+              <q-card-section>
+                <div class="row items-center justify-between no-wrap">
+                  <div class="text-caption text-weight-medium">TRAFFICO & AFFIDABILITÀ</div>
+                  <q-icon name="check_circle" size="24px" color="purple-7" />
+                </div>
+                <div class="text-h4 text-weight-bolder q-mt-sm">
+                  {{ metricsSummary.http?.success_rate_pct || 100 }}%
+                </div>
+                <div class="text-caption text-grey-8 q-mt-xs">
+                  {{ metricsSummary.http?.total_requests || 0 }} richieste elaborate
+                </div>
+              </q-card-section>
+            </q-card>
+          </div>
+
+          <!-- KPI 4: Code Background RQ -->
+          <div class="col-12 col-sm-6 col-md-3">
+            <q-card class="bg-amber-1 text-amber-10" flat bordered>
+              <q-card-section>
+                <div class="row items-center justify-between no-wrap">
+                  <div class="text-caption text-weight-medium">CODE REDIS (RQ)</div>
+                  <q-icon name="queue" size="24px" color="amber-8" />
+                </div>
+                <div class="text-h4 text-weight-bolder q-mt-sm">
+                  {{ metricsSummary.queues_rq?.total_pending || 0 }} <span class="text-caption">in coda</span>
+                </div>
+                <div class="text-caption text-grey-8 q-mt-xs">
+                  {{ metricsSummary.queues_rq?.total_failed || 0 }} job falliti
+                </div>
+              </q-card-section>
+            </q-card>
+          </div>
+        </div>
+
+        <!-- Sezioni Dettaglio: Contatori Business e Ripartizione HTTP -->
+        <div class="row q-col-gutter-md">
+          <div class="col-12 col-md-6">
+            <q-card flat bordered>
+              <q-card-section class="bg-grey-2 text-weight-bold">
+                <q-icon name="inventory_2" class="q-mr-xs" /> Volumi Operativi ERP
+              </q-card-section>
+              <q-separator />
+              <q-card-section>
+                <div class="row q-col-gutter-sm text-center">
+                  <div class="col-4">
+                    <div class="text-h5 text-weight-bold text-primary">{{ metricsSummary.business_totals?.orders || 0 }}</div>
+                    <div class="text-caption text-grey-7">Ordini Inseriti</div>
+                  </div>
+                  <div class="col-4">
+                    <div class="text-h5 text-weight-bold text-teal">{{ metricsSummary.business_totals?.invoices || 0 }}</div>
+                    <div class="text-caption text-grey-7">Fatture Emesse</div>
+                  </div>
+                  <div class="col-4">
+                    <div class="text-h5 text-weight-bold text-deep-orange">{{ metricsSummary.business_totals?.pos_sales || 0 }}</div>
+                    <div class="text-caption text-grey-7">Vendite Cassa POS</div>
+                  </div>
+                </div>
+              </q-card-section>
+            </q-card>
+          </div>
+
+          <div class="col-12 col-md-6">
+            <q-card flat bordered>
+              <q-card-section class="bg-grey-2 text-weight-bold">
+                <q-icon name="http" class="q-mr-xs" /> Ripartizione Esito Chiamate HTTP
+              </q-card-section>
+              <q-separator />
+              <q-card-section>
+                <div class="row q-col-gutter-sm text-center">
+                  <div class="col-4">
+                    <div class="text-h5 text-weight-bold text-positive">{{ metricsSummary.http?.status_2xx || 0 }}</div>
+                    <div class="text-caption text-grey-7">Status 2xx (Successo)</div>
+                  </div>
+                  <div class="col-4">
+                    <div class="text-h5 text-weight-bold text-warning">{{ metricsSummary.http?.status_4xx || 0 }}</div>
+                    <div class="text-caption text-grey-7">Status 4xx (Client Error)</div>
+                  </div>
+                  <div class="col-4">
+                    <div class="text-h5 text-weight-bold text-negative">{{ metricsSummary.http?.status_5xx || 0 }}</div>
+                    <div class="text-caption text-grey-7">Status 5xx (Server Error)</div>
+                  </div>
+                </div>
+              </q-card-section>
+            </q-card>
+          </div>
+        </div>
+      </q-tab-panel>
     </q-tab-panels>
 
     <!-- DIALOG DETTAGLIO EVENTO -->
@@ -473,11 +628,36 @@ const fetchChannels = async () => {
   }
 }
 
+const metricsSummary = ref({
+  http: { total_requests: 0, avg_latency_ms: 0, success_rate_pct: 100, status_2xx: 0, status_4xx: 0, status_5xx: 0 },
+  websockets: { active_clients: 0, total_broadcasts: 0 },
+  queues_rq: { critical: 0, emails: 0, reports: 0, default: 0, total_pending: 0, total_failed: 0 },
+  business_totals: { orders: 0, invoices: 0, pos_sales: 0 }
+})
+const loadingMetrics = ref(false)
+
+const fetchMetricsSummary = async () => {
+  loadingMetrics.value = true
+  try {
+    const res = await axios.get('/api/metrics/summary')
+    metricsSummary.value = res.data
+  } catch (err) {
+    console.error('Error fetching metrics summary:', err)
+  } finally {
+    loadingMetrics.value = false
+  }
+}
+
+const openGrafana = () => {
+  window.open('/grafana', '_blank')
+}
+
 const fetchData = () => {
   fetchEvents()
   fetchChannels()
   fetchEventTypes()
   fetchQueues()
+  fetchMetricsSummary()
 }
 
 const viewEvent = (ev) => {

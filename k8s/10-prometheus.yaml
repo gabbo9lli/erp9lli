@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erp9lli-prometheus-config
+  namespace: erp9lli
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: 'erp9lli-backend'
+        metrics_path: '/metrics'
+        scrape_interval: 15s
+        static_configs:
+          - targets: ['erp9lli-backend:8000']
+            labels:
+              app: 'erp9lli-backend'
+              env: 'production'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erp9lli-prometheus
+  namespace: erp9lli
+  labels:
+    app: erp9lli-prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erp9lli-prometheus
+  template:
+    metadata:
+      labels:
+        app: erp9lli-prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.54.0
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+            - "--storage.tsdb.retention.time=15d"
+            - "--web.enable-lifecycle"
+          ports:
+            - containerPort: 9090
+              name: web
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: storage
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: erp9lli-prometheus-config
+        - name: storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erp9lli-prometheus
+  namespace: erp9lli
+spec:
+  selector:
+    app: erp9lli-prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
+      name: web

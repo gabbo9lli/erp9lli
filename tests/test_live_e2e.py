@@ -174,6 +174,24 @@ try:
 except Exception as e:
     record("11c. Admin Test Alert System Endpoint", False, str(e))
 
+# 11d. Metrics Summary JSON API (/api/metrics/summary)
+try:
+    resp = get("/api/metrics/summary", headers=auth_headers)
+    data = json.loads(resp.read().decode())
+    passed = "http" in data and "websockets" in data and "queues_rq" in data and "business_totals" in data
+    record("11d. Metrics Summary JSON API", passed, f"Avg Latency: {data.get('http', {}).get('avg_latency_ms')}ms, WS: {data.get('websockets', {}).get('active_clients')}")
+except Exception as e:
+    record("11d. Metrics Summary JSON API", False, str(e))
+
+# 11e. Grafana External Dashboard Ingress (/grafana)
+try:
+    resp = get("/grafana/")
+    code = resp.getcode()
+    passed = code in (200, 302)
+    record("11e. Grafana Dashboard Ingress (/grafana)", passed, f"HTTP Code: {code}")
+except Exception as e:
+    record("11e. Grafana Dashboard Ingress (/grafana)", False, str(e))
+
 # 12. Rate Limiting Anti Brute-Force (eseguito alla fine per non bloccare i test precedenti)
 try:
     auth_url = f"{TARGET_URL}/api/signin"
