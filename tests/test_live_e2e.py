@@ -40,9 +40,12 @@ try:
     resp = get("/api/health")
     data = json.loads(resp.read().decode())
     passed = data.get("status") == "UP" and data.get("database", {}).get("status") == "UP"
+    req_id = resp.headers.get("X-Request-ID")
     record("1. Healthcheck & PostgreSQL Status", passed, f"DB Type: {data.get('database', {}).get('type')}")
+    record("1b. X-Request-ID Correlation Header", bool(req_id), f"ID: {req_id}")
 except Exception as e:
     record("1. Healthcheck & PostgreSQL Status", False, str(e))
+    record("1b. X-Request-ID Correlation Header", False, str(e))
 
 # 2. Security Headers & HSTS
 try:
@@ -152,6 +155,24 @@ try:
     record("11. POS Stations & BancoM API", passed, f"Station: {stations[0].get('nome') if stations else 'None'}")
 except Exception as e:
     record("11. POS Stations & BancoM API", False, str(e))
+
+# 11b. Prometheus OpenMetrics Endpoint
+try:
+    resp = get("/metrics")
+    content = resp.read().decode()
+    has_metrics = "erp9lli_http_requests_total" in content and "erp9lli_http_request_duration_seconds" in content
+    record("11b. Prometheus OpenMetrics Endpoint", has_metrics, "Found erp9lli_http_requests_total and histograms")
+except Exception as e:
+    record("11b. Prometheus OpenMetrics Endpoint", False, str(e))
+
+# 11c. Admin Test Alert System Endpoint
+try:
+    resp = post("/api/system/test-alert", {"message": "Test alert E2E live verification"}, headers=auth_headers)
+    data = json.loads(resp.read().decode())
+    passed = data.get("status") == "success"
+    record("11c. Admin Test Alert System Endpoint", passed, f"Result: {data.get('message')}")
+except Exception as e:
+    record("11c. Admin Test Alert System Endpoint", False, str(e))
 
 # 12. Rate Limiting Anti Brute-Force (eseguito alla fine per non bloccare i test precedenti)
 try:
