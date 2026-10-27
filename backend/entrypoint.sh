@@ -41,9 +41,9 @@ END
 fi
 
 # Start Server based on Environment
-if [ "$APP_ENV" = "production" ]; then
-    echo "Starting Uvicorn in production mode (port 8000)..."
-    exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+if [ "$APP_ENV" = "production" ] || [ "$APP_ENV" = "staging" ]; then
+    echo "Starting Uvicorn in production/staging mode (port 8000)..."
+    exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
 else
     echo "Starting Uvicorn in development mode (port 5000 with reload)..."
     exec uvicorn main:app --host 0.0.0.0 --port 5000 --reload
