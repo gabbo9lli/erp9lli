@@ -33,6 +33,23 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
         content={"detail": detail, "error": detail if isinstance(detail, str) else str(detail)}
     )
 
+import uuid
+from core.logging_config import request_id_ctx
+
+# 0. Correlation ID Middleware (X-Request-ID propagation)
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    req_id = request.headers.get("X-Request-ID")
+    if not req_id or len(req_id.strip()) == 0:
+        req_id = uuid.uuid4().hex
+    token = request_id_ctx.set(req_id)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = req_id
+        return response
+    finally:
+        request_id_ctx.reset(token)
+
 # Configura CORS Middleware con whitelist origini
 app.add_middleware(
     CORSMiddleware,
