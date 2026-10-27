@@ -649,7 +649,7 @@ const fetchMetricsSummary = async () => {
 }
 
 const openGrafana = () => {
-  window.open('/grafana', '_blank')
+  window.open('/grafana/d/erp9lli-ops-overview/', '_blank')
 }
 
 const fetchData = () => {

@@ -27,10 +27,11 @@ data:
         orgId: 1
         folder: ''
         type: file
-        disableDeletion: true
-        editable: true
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
         options:
-          path: /etc/grafana/provisioning/dashboards/json
+          path: /var/lib/grafana/dashboards
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -155,6 +156,12 @@ spec:
               value: "true"
             - name: GF_USERS_ALLOW_SIGN_UP
               value: "false"
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Admin"
+            - name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH
+              value: "/var/lib/grafana/dashboards/erp9lli-dashboard.json"
           ports:
             - containerPort: 3000
               name: http
@@ -171,9 +178,9 @@ spec:
             - name: dashboards-provider
               mountPath: /etc/grafana/provisioning/dashboards
             - name: dashboards-json
-              mountPath: /etc/grafana/provisioning/dashboards/json
+              mountPath: /var/lib/grafana/dashboards
             - name: storage
-              mountPath: /var/lib/grafana
+              mountPath: /var/lib/grafana/data
       volumes:
         - name: datasources
           configMap:
