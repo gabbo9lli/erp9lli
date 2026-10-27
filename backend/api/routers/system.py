@@ -1,5 +1,5 @@
 import os
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
@@ -75,3 +75,30 @@ def get_table_data(table_name: str, current_user: User = Depends(require_auth(ro
         return {"data": data}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.post("/system/test-alert")
+async def trigger_test_alert(
+    request: Request,
+    current_user: User = Depends(require_auth(roles=['Admin'])),
+    db: Session = Depends(get_db)
+):
+    data = {}
+    try:
+        data = await request.json()
+    except Exception:
+        pass
+    msg = data.get("message", "Simulazione manuale alert critico da console Admin")
+    from services.alerting_service import AlertingService
+    from core.logging_config import request_id_ctx
+    res = AlertingService.notify_error(
+        RuntimeError(msg),
+        endpoint="/api/system/test-alert",
+        request_id=request_id_ctx.get() or "manual-test",
+        user_email=current_user.email,
+        db=db
+    )
+    return {
+        "status": "success",
+        "message": "Procedura di test alert eseguita",
+        "alert_result": res
+    }

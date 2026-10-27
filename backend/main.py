@@ -33,6 +33,26 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
         content={"detail": detail, "error": detail if isinstance(detail, str) else str(detail)}
     )
 
+@app.exception_handler(Exception)
+async def global_unhandled_exception_handler(request: Request, exc: Exception):
+    req_id = request_id_ctx.get() or "unknown"
+    from services.alerting_service import AlertingService
+    AlertingService.notify_error(
+        exc,
+        endpoint=request.url.path,
+        request_id=req_id,
+        user_email=request.headers.get("X-Forwarded-Email", "unknown"),
+        client_ip=request.client.host if request.client else "unknown"
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal Server Error",
+            "error": "Si è verificato un errore interno. L'anomalia è stata registrata e notificata ai tecnici.",
+            "request_id": req_id
+        }
+    )
+
 import uuid
 import time
 from core.logging_config import request_id_ctx

@@ -1,4 +1,5 @@
 import os
+from typing import Optional, List
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -21,6 +22,13 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
 
     SMTP_ENABLED: bool = False
+
+    # Alerting Multi-Canale
+    ALERT_WEBHOOK_URL: Optional[str] = None
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_CHAT_ID: Optional[str] = None
+    ALERT_EMAIL_RECIPIENT: Optional[str] = None
+    ALERT_COOLDOWN_SECONDS: int = 300
 
     CORS_ALLOWED_ORIGINS: str = ""
 

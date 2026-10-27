@@ -47,4 +47,39 @@ def test_prometheus_metrics_endpoint(client):
     assert "erp9lli_websocket_active_connections" in content
     assert "erp9lli_orders_created_total" in content
 
+def test_alerting_service_multi_channel_and_cooldown(monkeypatch):
+    from services.alerting_service import AlertingService
+    from core.config import settings
+
+    sent_requests = []
+    def mock_http_request(url, payload):
+        sent_requests.append((url, payload))
+        return True
+
+    monkeypatch.setattr("services.alerting_service.AlertingService._send_http_request", mock_http_request)
+    monkeypatch.setattr(settings, "ALERT_WEBHOOK_URL", "https://hooks.slack.com/services/test/mock/webhook")
+    monkeypatch.setattr(settings, "TELEGRAM_BOT_TOKEN", "123456:MOCK_TOKEN")
+    monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "-1001234567")
+
+    # 1. Primo errore -> genera alert su webhook e telegram
+    res1 = AlertingService.notify_error(ValueError("Errore di test 1"), endpoint="/api/test", request_id="trace-001")
+    assert res1["notified"] is True
+    assert len(sent_requests) == 2  # 1 webhook + 1 telegram
+
+    # 2. Stesso errore immediato -> bloccato da cooldown
+    res2 = AlertingService.notify_error(ValueError("Errore di test 1"), endpoint="/api/test", request_id="trace-002")
+    assert res2["notified"] is False
+    assert res2["reason"] == "cooldown_active"
+    assert len(sent_requests) == 2  # nessun nuovo invio
+
+def test_api_system_test_alert_endpoint(client, db_session):
+    admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
+    client.get('/api/me', headers=admin_headers)
+
+    r = client.post("/api/system/test-alert", json={"message": "Alert di collaudo manuale"}, headers=admin_headers)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "success"
+
+
 
