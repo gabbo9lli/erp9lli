@@ -66,6 +66,20 @@ def test_extract_and_migrate_idempotent(db_session):
     assert inv_count > 0
     assert inst_count >= 0
     assert db_session.query(Invoice).count() > 0
+    total_inv_1 = db_session.query(Invoice).count()
+
+    # Secondo passaggio: idempotenza fatture anche con file ri-caricato con prefisso timestamp
+    import os
+    import shutil
+    timestamped_db = f"/tmp/20261029_113747_{os.path.basename(db_path)}"
+    shutil.copyfile(db_path, timestamped_db)
+    try:
+        inv_count2, inst_count2 = LegacyMigrationService.extract_and_migrate_invoices_and_installments(db_session, timestamped_db, limit=20)
+        total_inv_2 = db_session.query(Invoice).count()
+        assert total_inv_1 == total_inv_2
+    finally:
+        if os.path.exists(timestamped_db):
+            os.remove(timestamped_db)
 
 def test_reset_database_safety_token_and_user_preservation(db_session):
     from services.legacy_migration_service import LegacyMigrationService

@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import csv
@@ -16,6 +17,11 @@ from seed_accounting import seed_chart_of_accounts, seed_default_accounting_caus
 from services.event_dispatcher import dispatch_event
 
 class LegacyMigrationService:
+    @staticmethod
+    def _clean_source_filename(source_file: str) -> str:
+        base = os.path.basename(source_file)
+        return re.sub(r'^\d{8}_\d{6}_', '', base)
+
     @staticmethod
     def _find_mdb_tool(tool_name: str) -> str:
         found = shutil.which(tool_name)
@@ -192,13 +198,18 @@ class LegacyMigrationService:
                 producers.add(prod)
 
         migrated = 0
+        clean_name = cls._clean_source_filename(source_file)
+        source_names = list({filename, clean_name})
+
         items_to_process = list(seen_clients.items())
         if limit:
             items_to_process = items_to_process[:limit]
 
         for legacy_id, ragsoc in items_to_process:
-            sync = db.query(LegacyMigrationSync).filter_by(
-                source_file=filename, entity_type="partner", legacy_id=str(legacy_id)
+            sync = db.query(LegacyMigrationSync).filter(
+                LegacyMigrationSync.entity_type == "partner",
+                LegacyMigrationSync.legacy_id == str(legacy_id),
+                LegacyMigrationSync.source_file.in_(source_names)
             ).first()
             if sync:
                 continue
@@ -216,15 +227,17 @@ class LegacyMigrationService:
                 migrated += 1
 
             db.add(LegacyMigrationSync(
-                source_file=filename,
+                source_file=clean_name,
                 entity_type="partner",
                 legacy_id=str(legacy_id),
                 target_id=partner.id
             ))
 
         for prod_nome in list(producers)[: (limit or len(producers))]:
-            sync = db.query(LegacyMigrationSync).filter_by(
-                source_file=filename, entity_type="partner", legacy_id=f"PROD-{prod_nome}"
+            sync = db.query(LegacyMigrationSync).filter(
+                LegacyMigrationSync.entity_type == "partner",
+                LegacyMigrationSync.legacy_id == f"PROD-{prod_nome}",
+                LegacyMigrationSync.source_file.in_(source_names)
             ).first()
             if sync:
                 continue
@@ -242,7 +255,7 @@ class LegacyMigrationService:
                 migrated += 1
 
             db.add(LegacyMigrationSync(
-                source_file=filename,
+                source_file=clean_name,
                 entity_type="partner",
                 legacy_id=f"PROD-{prod_nome}",
                 target_id=partner.id
@@ -278,9 +291,14 @@ class LegacyMigrationService:
             items_to_process = items_to_process[:limit]
 
         migrated = 0
+        clean_name = cls._clean_source_filename(source_file)
+        source_names = list({filename, clean_name})
+
         for legacy_id, art_data in items_to_process:
-            sync = db.query(LegacyMigrationSync).filter_by(
-                source_file=filename, entity_type="product", legacy_id=str(legacy_id)
+            sync = db.query(LegacyMigrationSync).filter(
+                LegacyMigrationSync.entity_type == "product",
+                LegacyMigrationSync.legacy_id == str(legacy_id),
+                LegacyMigrationSync.source_file.in_(source_names)
             ).first()
             if sync:
                 continue
@@ -311,7 +329,7 @@ class LegacyMigrationService:
                 migrated += 1
 
             db.add(LegacyMigrationSync(
-                source_file=filename,
+                source_file=clean_name,
                 entity_type="product",
                 legacy_id=str(legacy_id),
                 target_id=prod.id
@@ -360,12 +378,17 @@ class LegacyMigrationService:
             key = (aid, lotto, scad_raw)
             aggregated_t2[key] = aggregated_t2.get(key, 0.0) + qta
 
+        clean_name = cls._clean_source_filename(source_file)
+        source_names = list({filename, clean_name})
+
         for (aid, lotto, scad_raw), qta in aggregated_t2.items():
             scadenza = cls.parse_access_date(scad_raw)
             sync_key = f"{aid}_{lotto}_{scad_raw}"
 
-            sync_prod = db.query(LegacyMigrationSync).filter_by(
-                source_file=filename, entity_type="product", legacy_id=aid
+            sync_prod = db.query(LegacyMigrationSync).filter(
+                LegacyMigrationSync.entity_type == "product",
+                LegacyMigrationSync.legacy_id == str(aid),
+                LegacyMigrationSync.source_file.in_(source_names)
             ).first()
             p_id = sync_prod.target_id if sync_prod else None
             prod = db.get(Product, p_id) if p_id else None
@@ -374,30 +397,40 @@ class LegacyMigrationService:
             if not prod:
                 continue
 
-            sync_lot = db.query(LegacyMigrationSync).filter_by(
-                source_file=filename, entity_type="stock_lot", legacy_id=sync_key
+            sync_lot = db.query(LegacyMigrationSync).filter(
+                LegacyMigrationSync.entity_type == "stock_lot",
+                LegacyMigrationSync.legacy_id == sync_key,
+                LegacyMigrationSync.source_file.in_(source_names)
             ).first()
             if sync_lot:
                 continue
 
-            pnote_item = PurchaseDeliveryNoteItem(
+            existing_item = db.query(PurchaseDeliveryNoteItem).filter_by(
                 purchase_delivery_note_id=pnote.id,
                 product_id=prod.id,
-                descrizione=prod.descrizione,
-                unita_misura=prod.unita_misura,
-                colli=int(qta),
-                quantita=qta,
-                prezzo_unitario=prod.prezzo_acquisto or 1.0,
-                aliquota_iva=prod.aliquota_iva or 4,
-                lotto=lotto,
-                data_scadenza=scadenza or date.today()
-            )
-            db.add(pnote_item)
-            db.flush()
-            migrated += 1
+                lotto=lotto
+            ).first()
+            if existing_item:
+                pnote_item = existing_item
+            else:
+                pnote_item = PurchaseDeliveryNoteItem(
+                    purchase_delivery_note_id=pnote.id,
+                    product_id=prod.id,
+                    descrizione=prod.descrizione,
+                    unita_misura=prod.unita_misura,
+                    colli=int(qta),
+                    quantita=qta,
+                    prezzo_unitario=prod.prezzo_acquisto or 1.0,
+                    aliquota_iva=prod.aliquota_iva or 4,
+                    lotto=lotto,
+                    data_scadenza=scadenza or date.today()
+                )
+                db.add(pnote_item)
+                db.flush()
+                migrated += 1
 
             db.add(LegacyMigrationSync(
-                source_file=filename,
+                source_file=clean_name,
                 entity_type="stock_lot",
                 legacy_id=sync_key,
                 target_id=pnote_item.id
@@ -432,14 +465,18 @@ class LegacyMigrationService:
 
         migrated_invoices = 0
         migrated_installments = 0
+        clean_name = cls._clean_source_filename(source_file)
+        source_names = list({filename, clean_name})
 
         idff_list = list(invoices_map.keys())
         if limit:
             idff_list = idff_list[:limit]
 
         for idff in idff_list:
-            sync_inv = db.query(LegacyMigrationSync).filter_by(
-                source_file=filename, entity_type="invoice", legacy_id=str(idff)
+            sync_inv = db.query(LegacyMigrationSync).filter(
+                LegacyMigrationSync.entity_type == "invoice",
+                LegacyMigrationSync.legacy_id == str(idff),
+                LegacyMigrationSync.source_file.in_(source_names)
             ).first()
             if sync_inv:
                 continue
@@ -448,8 +485,10 @@ class LegacyMigrationService:
             first_row = inv_rows[0]
 
             cid = str(first_row.get("IdCliente"))
-            sync_cli = db.query(LegacyMigrationSync).filter_by(
-                source_file=filename, entity_type="partner", legacy_id=cid
+            sync_cli = db.query(LegacyMigrationSync).filter(
+                LegacyMigrationSync.entity_type == "partner",
+                LegacyMigrationSync.legacy_id == cid,
+                LegacyMigrationSync.source_file.in_(source_names)
             ).first()
             cli_id = sync_cli.target_id if sync_cli else None
             if not cli_id:
@@ -466,107 +505,113 @@ class LegacyMigrationService:
                 num = int(idff)
             numero_completo = f"FT-{anno}-{num:04d}"
 
-            totale_imponibile = 0.0
-            totale_imposta = 0.0
-            castelletto = {}
-            items = []
+            existing_inv = db.query(Invoice).filter_by(numero_completo=numero_completo).first()
+            if existing_inv:
+                invoice = existing_inv
+            else:
+                totale_imponibile = 0.0
+                totale_imposta = 0.0
+                castelletto = {}
+                items = []
 
-            for r_it in inv_rows:
-                aid = str(r_it.get("idArt"))
-                sync_art = db.query(LegacyMigrationSync).filter_by(
-                    source_file=filename, entity_type="product", legacy_id=aid
-                ).first()
-                p_id = sync_art.target_id if sync_art else None
-                prod = db.get(Product, p_id) if p_id else None
-                if not prod:
-                    prod = db.query(Product).first()
-                p_id = prod.id if prod else None
-                if not p_id:
-                    continue
+                for r_it in inv_rows:
+                    aid = str(r_it.get("idArt"))
+                    sync_art = db.query(LegacyMigrationSync).filter(
+                        LegacyMigrationSync.entity_type == "product",
+                        LegacyMigrationSync.legacy_id == aid,
+                        LegacyMigrationSync.source_file.in_(source_names)
+                    ).first()
+                    p_id = sync_art.target_id if sync_art else None
+                    prod = db.get(Product, p_id) if p_id else None
+                    if not prod:
+                        prod = db.query(Product).first()
+                    p_id = prod.id if prod else None
+                    if not p_id:
+                        continue
 
-                qta = float(r_it.get("xqta") or r_it.get("usciti") or 1.0)
-                prezzo = float(r_it.get("prezzofatt") or r_it.get("prezzoArt") or (prod.prezzo_vendita if prod else 1.0))
-                aliq = prod.aliquota_iva if (prod and prod.aliquota_iva is not None) else 4
-                imp = round(qta * prezzo, 2)
-                iva = round(imp * (aliq / 100.0), 2)
+                    qta = float(r_it.get("xqta") or r_it.get("usciti") or 1.0)
+                    prezzo = float(r_it.get("prezzofatt") or r_it.get("prezzoArt") or (prod.prezzo_vendita if prod else 1.0))
+                    aliq = prod.aliquota_iva if (prod and prod.aliquota_iva is not None) else 4
+                    imp = round(qta * prezzo, 2)
+                    iva = round(imp * (aliq / 100.0), 2)
 
-                totale_imponibile += imp
-                totale_imposta += iva
+                    totale_imponibile += imp
+                    totale_imposta += iva
 
-                aliq_str = str(aliq)
-                if aliq_str not in castelletto:
-                    castelletto[aliq_str] = {"imponibile": 0.0, "imposta": 0.0}
-                castelletto[aliq_str]["imponibile"] = round(castelletto[aliq_str]["imponibile"] + imp, 2)
-                castelletto[aliq_str]["imposta"] = round(castelletto[aliq_str]["imposta"] + iva, 2)
+                    aliq_str = str(aliq)
+                    if aliq_str not in castelletto:
+                        castelletto[aliq_str] = {"imponibile": 0.0, "imposta": 0.0}
+                    castelletto[aliq_str]["imponibile"] = round(castelletto[aliq_str]["imponibile"] + imp, 2)
+                    castelletto[aliq_str]["imposta"] = round(castelletto[aliq_str]["imposta"] + iva, 2)
 
-                items.append(InvoiceItem(
-                    product_id=p_id,
-                    descrizione=r_it.get("DescArt", prod.descrizione if prod else "Articolo"),
-                    unita_misura=r_it.get("um", prod.unita_misura if prod else "KG"),
-                    colli=1,
-                    quantita=qta,
-                    prezzo_unitario=prezzo,
-                    aliquota_iva=aliq,
-                    imponibile_riga=imp
-                ))
+                    items.append(InvoiceItem(
+                        product_id=p_id,
+                        descrizione=r_it.get("DescArt", prod.descrizione if prod else "Articolo"),
+                        unita_misura=r_it.get("um", prod.unita_misura if prod else "KG"),
+                        colli=1,
+                        quantita=qta,
+                        prezzo_unitario=prezzo,
+                        aliquota_iva=aliq,
+                        imponibile_riga=imp
+                    ))
 
-            totale_fattura = round(totale_imponibile + totale_imposta, 2)
+                totale_fattura = round(totale_imponibile + totale_imposta, 2)
 
-            invoice = Invoice(
-                numero=num,
-                anno=anno,
-                numero_completo=numero_completo,
-                tipo_documento="TD01",
-                data_documento=doc_date,
-                cliente_id=cli_id,
-                condizioni_pagamento="30gg fm",
-                esigibilita_iva="I",
-                totale_imponibile=totale_imponibile,
-                totale_imposta=totale_imposta,
-                totale_fattura=totale_fattura,
-                castelletto_iva=castelletto if castelletto else {"4": {"imponibile": totale_imponibile, "imposta": totale_imposta}},
-                stato="emessa",
-                note=f"Importata da Access IdFF={idff}",
-                items=items
-            )
-            db.add(invoice)
-            db.flush()
-            migrated_invoices += 1
+                invoice = Invoice(
+                    numero=num,
+                    anno=anno,
+                    numero_completo=numero_completo,
+                    tipo_documento="TD01",
+                    data_documento=doc_date,
+                    cliente_id=cli_id,
+                    condizioni_pagamento="30gg fm",
+                    esigibilita_iva="I",
+                    totale_imponibile=totale_imponibile,
+                    totale_imposta=totale_imposta,
+                    totale_fattura=totale_fattura,
+                    castelletto_iva=castelletto if castelletto else {"4": {"imponibile": totale_imponibile, "imposta": totale_imposta}},
+                    stato="emessa",
+                    note=f"Importata da Access IdFF={idff}",
+                    items=items
+                )
+                db.add(invoice)
+                db.flush()
+                migrated_invoices += 1
 
-            # Scadenze rate
-            scad_rows = scad_by_idff.get(idff, [])
-            if scad_rows:
-                for idx, s in enumerate(scad_rows):
-                    imp_scad = float(s.get("importoscadenza") or (totale_fattura / len(scad_rows)))
-                    dt_scad = cls.parse_access_date(s.get("scadenza")) or doc_date
-                    pagato = str(s.get("pagato", "0")) in ("1", "True", "true")
-                    st = "incassata" if pagato else "aperta"
+                # Scadenze rate
+                scad_rows = scad_by_idff.get(idff, [])
+                if scad_rows:
+                    for idx, s in enumerate(scad_rows):
+                        imp_scad = float(s.get("importoscadenza") or (totale_fattura / len(scad_rows)))
+                        dt_scad = cls.parse_access_date(s.get("scadenza")) or doc_date
+                        pagato = str(s.get("pagato", "0")) in ("1", "True", "true")
+                        st = "incassata" if pagato else "aperta"
 
+                        inst = InvoiceInstallment(
+                            invoice_id=invoice.id,
+                            numero_rata=idx + 1,
+                            totale_rate=len(scad_rows),
+                            data_scadenza=dt_scad,
+                            importo=round(imp_scad, 2),
+                            stato=st,
+                            data_incasso=cls.parse_access_date(s.get("datapagamento")) if pagato else None
+                        )
+                        db.add(inst)
+                        migrated_installments += 1
+                else:
                     inst = InvoiceInstallment(
                         invoice_id=invoice.id,
-                        numero_rata=idx + 1,
-                        totale_rate=len(scad_rows),
-                        data_scadenza=dt_scad,
-                        importo=round(imp_scad, 2),
-                        stato=st,
-                        data_incasso=cls.parse_access_date(s.get("datapagamento")) if pagato else None
+                        numero_rata=1,
+                        totale_rate=1,
+                        data_scadenza=doc_date,
+                        importo=totale_fattura,
+                        stato="aperta"
                     )
                     db.add(inst)
                     migrated_installments += 1
-            else:
-                inst = InvoiceInstallment(
-                    invoice_id=invoice.id,
-                    numero_rata=1,
-                    totale_rate=1,
-                    data_scadenza=doc_date,
-                    importo=totale_fattura,
-                    stato="aperta"
-                )
-                db.add(inst)
-                migrated_installments += 1
 
             db.add(LegacyMigrationSync(
-                source_file=filename,
+                source_file=clean_name,
                 entity_type="invoice",
                 legacy_id=str(idff),
                 target_id=invoice.id,
