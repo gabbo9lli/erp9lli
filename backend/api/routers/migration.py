@@ -1,5 +1,8 @@
+import os
+import shutil
+from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Request, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
@@ -9,12 +12,49 @@ from schemas.migration import (
     MigrationInspectRequest, MigrationInspectResponse,
     MigrationDryRunRequest, MigrationDryRunResponse,
     MigrationResetRequest, MigrationResetResponse,
-    MigrationExecuteRequest, MigrationExecuteResponse
+    MigrationExecuteRequest, MigrationExecuteResponse,
+    MigrationUploadResponse
 )
 from services.legacy_migration_service import LegacyMigrationService
 from services.event_dispatcher import dispatch_event
 
 router = APIRouter(prefix="/api/migration", tags=["Legacy Migration"])
+
+ALLOWED_EXTENSIONS = {".accdb", ".mdb"}
+UPLOAD_DIR = os.environ.get("LEGACY_UPLOAD_DIR", "/tmp/legacy_uploads")
+
+@router.post("/upload", response_model=MigrationUploadResponse)
+def upload_legacy_database(
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_auth(roles=['Admin']))
+):
+    original_name = file.filename or "database.accdb"
+    ext = os.path.splitext(original_name)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Estensione file non valida. Sono supportati solo database Access (.accdb, .mdb)"
+        )
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    clean_base = os.path.basename(original_name)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target_filename = f"{timestamp}_{clean_base}"
+    target_path = os.path.join(UPLOAD_DIR, target_filename)
+
+    with open(target_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    size_bytes = os.path.getsize(target_path)
+    size_mb = round(size_bytes / (1024 * 1024), 2)
+
+    return {
+        "status": "success",
+        "filename": original_name,
+        "file_path": target_path,
+        "file_size_bytes": size_bytes,
+        "file_size_mb": size_mb
+    }
 
 @router.post("/inspect", response_model=MigrationInspectResponse)
 def inspect_legacy_database(

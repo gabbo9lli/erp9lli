@@ -26,20 +26,39 @@
       <div class="col-12 col-md-6">
         <q-card flat bordered class="q-mb-md">
           <q-card-section>
-            <div class="text-subtitle1 text-weight-bold q-mb-sm">1. File Sorgente & Modalità</div>
+            <div class="text-subtitle1 text-weight-bold q-mb-sm">1. File Sorgente da Windows & Modalità</div>
             
-            <q-input
-              v-model="sourceFile"
-              label="Percorso Database Access (.accdb)"
+            <q-file
+              v-model="selectedFile"
+              label="Seleziona file Access da Windows (.accdb, .mdb)"
               outlined
               dense
+              accept=".accdb, .mdb"
               class="q-mb-md"
-              hint="Percorso file assoluto sul server o storage aziendale"
+              hint="Carica il database Access salvato sul tuo computer Windows"
+              :loading="uploadingFile"
+              @update:model-value="uploadSelectedFile"
             >
               <template v-slot:prepend>
-                <q-icon name="folder_open" />
+                <q-icon name="cloud_upload" />
               </template>
-            </q-input>
+              <template v-slot:append v-if="selectedFile">
+                <q-icon name="close" @click.stop.prevent="clearSelectedFile" class="cursor-pointer" />
+              </template>
+            </q-file>
+
+            <div v-if="uploadedFileInfo" class="q-mb-md">
+              <q-banner dense class="bg-green-1 text-positive rounded-borders">
+                <template v-slot:avatar>
+                  <q-icon name="check_circle" color="positive" />
+                </template>
+                <div class="text-caption text-weight-medium">
+                  File pronto: <strong>{{ uploadedFileInfo.filename }}</strong> ({{ uploadedFileInfo.file_size_mb }} MB)
+                  <br />
+                  <span class="text-grey-7">Caricato sul server: {{ uploadedFileInfo.file_path }}</span>
+                </div>
+              </q-banner>
+            </div>
 
             <div class="text-caption text-weight-medium q-mb-xs">Tipo di Operazione:</div>
             <div class="q-gutter-sm q-mb-md">
@@ -53,6 +72,7 @@
                 icon="analytics"
                 label="Analizza File (Dry Run)"
                 :loading="loadingDryRun"
+                :disable="!sourceFile || uploadingFile"
                 @click="runDryRun"
               />
               <q-btn
@@ -60,7 +80,7 @@
                 :icon="migrationMode === 'reset' ? 'delete_forever' : 'play_arrow'"
                 :label="migrationMode === 'reset' ? 'Svuota & Inizializza' : 'Avvia Importazione'"
                 :loading="loadingExecute"
-                :disable="!dryRunResult"
+                :disable="!dryRunResult || !sourceFile || uploadingFile"
                 @click="onStartMigrationClicked"
               />
             </div>
@@ -201,7 +221,10 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 import wsService from '../services/websocket.js'
 
-const sourceFile = ref('/Users/novellig/docker_images/gestionale_retebio/GestionaleReteBio2026.accdb')
+const selectedFile = ref(null)
+const uploadingFile = ref(false)
+const uploadedFileInfo = ref(null)
+const sourceFile = ref('')
 const migrationMode = ref('incremental')
 const loadingDryRun = ref(false)
 const loadingExecute = ref(false)
@@ -220,7 +243,46 @@ const addLog = (msg) => {
   logs.value.push({ time, message: msg })
 }
 
+const uploadSelectedFile = async (file) => {
+  if (!file) return
+  uploadingFile.value = true
+  addLog(`Caricamento file ${file.name} dal computer Windows in corso...`)
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await axios.post('/api/migration/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    uploadedFileInfo.value = res.data
+    sourceFile.value = res.data.file_path
+    dryRunResult.value = null
+    addLog(`Caricato sul server con successo: ${res.data.filename} (${res.data.file_size_mb} MB).`)
+  } catch (err) {
+    addLog(`ERRORE durante l'upload del file: ${err.response?.data?.detail || err.message}`)
+    alert(err.response?.data?.detail || 'Errore durante il caricamento del file da Windows')
+    selectedFile.value = null
+    sourceFile.value = ''
+    uploadedFileInfo.value = null
+  } finally {
+    uploadingFile.value = false
+  }
+}
+
+const clearSelectedFile = () => {
+  selectedFile.value = null
+  sourceFile.value = ''
+  uploadedFileInfo.value = null
+  dryRunResult.value = null
+  addLog('File rimosso. Selezionare un nuovo file per continuare.')
+}
+
 const runDryRun = async () => {
+  if (!sourceFile.value) {
+    alert('Seleziona prima un file da caricare dal tuo computer Windows.')
+    return
+  }
   loadingDryRun.value = true
   addLog(`Avvio analisi e dry-run del file: ${sourceFile.value}`)
   try {

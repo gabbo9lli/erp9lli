@@ -169,6 +169,43 @@ def test_async_migration_isolated_session_and_progress_events(client, db_session
     task_id = data["task_id"]
     assert task_id is not None
 
+def test_upload_legacy_database_endpoint(client, db_session):
+    import io
+    import os
+    admin_headers = {'X-Forwarded-Email': 'admin@company.com', 'X-Forwarded-Groups': 'admin'}
+    client.get('/api/me', headers=admin_headers)
+
+    # 1. Reject invalid file extension (.txt)
+    txt_content = io.BytesIO(b"dummy text content")
+    r_bad = client.post(
+        "/api/migration/upload",
+        files={"file": ("test.txt", txt_content, "text/plain")},
+        headers=admin_headers
+    )
+    assert r_bad.status_code == 400
+    assert "estensione" in r_bad.json()["detail"].lower() or "supportati" in r_bad.json()["detail"].lower()
+
+    # 2. Upload valid .accdb file
+    accdb_content = io.BytesIO(b"\x00\x01\x02\x03fake_access_db_binary_content")
+    r_ok = client.post(
+        "/api/migration/upload",
+        files={"file": ("GestionaleTest.accdb", accdb_content, "application/x-msaccess")},
+        headers=admin_headers
+    )
+    assert r_ok.status_code == 200
+    data = r_ok.json()
+    assert data["status"] == "success"
+    assert data["filename"] == "GestionaleTest.accdb"
+    assert data["file_path"] is not None
+    assert os.path.exists(data["file_path"])
+    assert data["file_size_bytes"] == len(b"\x00\x01\x02\x03fake_access_db_binary_content")
+    assert "file_size_mb" in data
+
+    # Clean up test uploaded file
+    if os.path.exists(data["file_path"]):
+        os.remove(data["file_path"])
+
+
 
 
 

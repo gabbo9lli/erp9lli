@@ -48,3 +48,11 @@ class MigrationExecuteResponse(BaseModel):
     migrated_installments: int = 0
     task_id: Optional[int] = None
     message: Optional[str] = None
+
+class MigrationUploadResponse(BaseModel):
+    status: str
+    filename: str
+    file_path: str
+    file_size_bytes: int
+    file_size_mb: float
+
