@@ -35,10 +35,14 @@ class LegacyMigrationService:
             return source_file
         filename = os.path.basename(source_file)
         candidates = [
+            os.path.join("/app/data/uploads", filename),
             os.path.join("/app/data", filename),
+            os.path.join(os.getcwd(), "data", "uploads", filename),
             os.path.join(os.getcwd(), "data", filename),
             os.path.join(os.getcwd(), "backend", "data", filename),
+            os.path.join("/opt/erp9lli/data/uploads", filename),
             os.path.join("/opt/erp9lli/data", filename),
+            os.path.join("/tmp/legacy_uploads", filename),
             os.path.join("/tmp", filename),
             filename
         ]

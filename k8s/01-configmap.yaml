@@ -11,3 +11,4 @@ data:
   FORWARDED_ALLOW_IPS: "*"
   SMTP_ENABLED: "false"
   SPREE_ENABLED: "false"
+  LEGACY_UPLOAD_DIR: "/app/data/uploads"

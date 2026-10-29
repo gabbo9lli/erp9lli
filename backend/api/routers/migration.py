@@ -21,7 +21,17 @@ from services.event_dispatcher import dispatch_event
 router = APIRouter(prefix="/api/migration", tags=["Legacy Migration"])
 
 ALLOWED_EXTENSIONS = {".accdb", ".mdb"}
-UPLOAD_DIR = os.environ.get("LEGACY_UPLOAD_DIR", "/tmp/legacy_uploads")
+
+def get_legacy_upload_dir() -> str:
+    env_dir = os.environ.get("LEGACY_UPLOAD_DIR")
+    if env_dir:
+        return env_dir
+    if os.path.exists("/app/data"):
+        return "/app/data/uploads"
+    local_data = os.path.join(os.getcwd(), "data", "uploads")
+    if os.path.exists(os.path.join(os.getcwd(), "data")):
+        return local_data
+    return "/tmp/legacy_uploads"
 
 @router.post("/upload", response_model=MigrationUploadResponse)
 def upload_legacy_database(
@@ -36,11 +46,12 @@ def upload_legacy_database(
             detail="Estensione file non valida. Sono supportati solo database Access (.accdb, .mdb)"
         )
 
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    upload_dir = get_legacy_upload_dir()
+    os.makedirs(upload_dir, exist_ok=True)
     clean_base = os.path.basename(original_name)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     target_filename = f"{timestamp}_{clean_base}"
-    target_path = os.path.join(UPLOAD_DIR, target_filename)
+    target_path = os.path.join(upload_dir, target_filename)
 
     with open(target_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)

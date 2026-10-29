@@ -11,3 +11,4 @@ data:
   REDIS_URL: "redis://erp9lli-redis.erp9lli.svc.cluster.local:6379/1"
   ENABLED_MODULES: "all"
   SMTP_ENABLED: "false"
+  LEGACY_UPLOAD_DIR: "/app/data/uploads"
