@@ -113,6 +113,7 @@ describe('LegacyMigration.vue', () => {
             partners_count: 180,
             products_count: 3200,
             stock_lots_count: 324,
+            delivery_notes_count: 67,
             invoices_count: 850,
             installments_count: 1600,
             estimated_seconds: 15
@@ -166,5 +167,7 @@ describe('LegacyMigration.vue', () => {
 
     expect(wrapper.text()).toContain('180')
     expect(wrapper.text()).toContain('3200')
+    expect(wrapper.text()).toContain('67')
+    expect(wrapper.text()).toContain('DDT')
   })
 })

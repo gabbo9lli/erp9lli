@@ -30,10 +30,11 @@ def test_inspect_and_dry_run_access_file(db_session):
     assert dry["partners_count"] > 0
     assert dry["products_count"] > 0
     assert dry["stock_lots_count"] > 0
+    assert dry["delivery_notes_count"] > 0
 
 def test_extract_and_migrate_idempotent(db_session):
     from services.legacy_migration_service import LegacyMigrationService
-    from models import Partner, Product, PurchaseDeliveryNote, Invoice
+    from models import Partner, Product, PurchaseDeliveryNote, DeliveryNote, DeliveryNoteItem, Invoice
     db_path = "/Users/novellig/docker_images/gestionale_retebio/GestionaleReteBio2026.accdb"
 
     # 1. Migrazione Partner (primo passaggio)
@@ -68,7 +69,14 @@ def test_extract_and_migrate_idempotent(db_session):
     assert db_session.query(Invoice).count() > 0
     total_inv_1 = db_session.query(Invoice).count()
 
-    # Secondo passaggio: idempotenza fatture anche con file ri-caricato con prefisso timestamp
+    # 5. Migrazione DDT (Documenti di Trasporto)
+    ddt_count1 = LegacyMigrationService.extract_and_migrate_delivery_notes(db_session, db_path, limit=20)
+    assert ddt_count1 > 0
+    assert db_session.query(DeliveryNote).count() > 0
+    assert db_session.query(DeliveryNoteItem).count() > 0
+    total_ddt_1 = db_session.query(DeliveryNote).count()
+
+    # Secondo passaggio: idempotenza fatture e DDT anche con file ri-caricato con prefisso timestamp
     import os
     import shutil
     timestamped_db = f"/tmp/20261029_113747_{os.path.basename(db_path)}"
@@ -77,6 +85,10 @@ def test_extract_and_migrate_idempotent(db_session):
         inv_count2, inst_count2 = LegacyMigrationService.extract_and_migrate_invoices_and_installments(db_session, timestamped_db, limit=20)
         total_inv_2 = db_session.query(Invoice).count()
         assert total_inv_1 == total_inv_2
+
+        ddt_count2 = LegacyMigrationService.extract_and_migrate_delivery_notes(db_session, timestamped_db, limit=20)
+        total_ddt_2 = db_session.query(DeliveryNote).count()
+        assert total_ddt_1 == total_ddt_2
     finally:
         if os.path.exists(timestamped_db):
             os.remove(timestamped_db)

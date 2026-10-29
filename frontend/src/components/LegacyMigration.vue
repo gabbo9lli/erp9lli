@@ -116,6 +116,12 @@
               </div>
               <div class="col-6 col-sm-4">
                 <q-card flat bordered class="bg-white q-pa-sm">
+                  <div class="text-h6 text-deep-orange">{{ dryRunResult.delivery_notes_count || 0 }}</div>
+                  <div class="text-caption text-grey-7">DDT di Vendita</div>
+                </q-card>
+              </div>
+              <div class="col-6 col-sm-4">
+                <q-card flat bordered class="bg-white q-pa-sm">
                   <div class="text-h6 text-indigo">{{ dryRunResult.invoices_count }}</div>
                   <div class="text-caption text-grey-7">Fatture Storiche</div>
                 </q-card>
@@ -288,7 +294,7 @@ const runDryRun = async () => {
   try {
     const res = await axios.post('/api/migration/dry-run', { source_file: sourceFile.value })
     dryRunResult.value = res.data
-    addLog(`Analisi completata con successo! Trovati ${res.data.partners_count} soggetti, ${res.data.products_count} articoli, ${res.data.stock_lots_count} lotti.`)
+    addLog(`Analisi completata con successo! Trovati ${res.data.partners_count} soggetti, ${res.data.products_count} articoli, ${res.data.stock_lots_count} lotti, ${res.data.delivery_notes_count || 0} DDT, ${res.data.invoices_count} fatture.`)
   } catch (err) {
     addLog(`ERRORE nell'analisi: ${err.response?.data?.error || err.message}`)
     alert(err.response?.data?.error || 'Errore durante la scansione del file Access')
@@ -335,7 +341,7 @@ const executeMigration = async () => {
     const d = res.data
     progressPercent.value = 100
     executionStatus.value = 'completato'
-    addLog(`MIGRAZIONE COMPLETATA! Inseriti/Aggiornati: ${d.migrated_partners} partner, ${d.migrated_products} articoli, ${d.migrated_stock_lots} carichi lotto, ${d.migrated_invoices} fatture.`)
+    addLog(`MIGRAZIONE COMPLETATA! Inseriti/Aggiornati: ${d.migrated_partners} partner, ${d.migrated_products} articoli, ${d.migrated_stock_lots} carichi lotto, ${d.migrated_delivery_notes || 0} DDT, ${d.migrated_invoices} fatture.`)
   } catch (err) {
     executionStatus.value = 'errore'
     addLog(`ERRORE durante l'importazione: ${err.response?.data?.detail || err.message}`)

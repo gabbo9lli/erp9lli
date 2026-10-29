@@ -21,6 +21,7 @@ class MigrationDryRunResponse(BaseModel):
     partners_count: int = 0
     products_count: int = 0
     stock_lots_count: int = 0
+    delivery_notes_count: int = 0
     invoices_count: int = 0
     installments_count: int = 0
     estimated_seconds: int = 0
@@ -44,6 +45,7 @@ class MigrationExecuteResponse(BaseModel):
     migrated_partners: int = 0
     migrated_products: int = 0
     migrated_stock_lots: int = 0
+    migrated_delivery_notes: int = 0
     migrated_invoices: int = 0
     migrated_installments: int = 0
     task_id: Optional[int] = None

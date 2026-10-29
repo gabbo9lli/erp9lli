@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models import (
     Partner, Product, PurchaseDeliveryNote, PurchaseDeliveryNoteItem,
+    DeliveryNote, DeliveryNoteItem,
     Invoice, InvoiceItem, InvoiceInstallment, LegacyMigrationSync,
     Account, AccountingCausal
 )
@@ -125,6 +126,7 @@ class LegacyMigrationService:
                 "partners_count": 0,
                 "products_count": 0,
                 "stock_lots_count": 0,
+                "delivery_notes_count": 0,
                 "invoices_count": 0,
                 "installments_count": 0,
                 "estimated_seconds": 0
@@ -135,6 +137,7 @@ class LegacyMigrationService:
         partners_count = 0
         products_count = 0
         stock_lots_count = 0
+        delivery_notes_count = 0
         invoices_count = 0
         installments_count = 0
 
@@ -161,6 +164,16 @@ class LegacyMigrationService:
             rows_t2 = cls._export_table_rows(source_file, "T2")
             stock_lots_count = len([r for r in rows_t2 if float(r.get("totgiac") or 0.0) > 0])
 
+        # Delivery notes (DDT) estimate
+        if "T1DettMovScadRis" in tables:
+            rows_ddt = cls._export_table_rows(source_file, "T1DettMovScadRis")
+            ddt_keys = {(r.get("NBolla"), r.get("DataDoc"), r.get("RagSoc")) for r in rows_ddt if (r.get("NBolla") or "").strip() not in ("", "0")}
+            delivery_notes_count = len(ddt_keys)
+        elif "T_STAMPA_DDT" in tables:
+            rows_ddt = cls._export_table_rows(source_file, "T_STAMPA_DDT")
+            ddt_keys = {(r.get("NBolla"), r.get("DataDoc"), r.get("RagSoc")) for r in rows_ddt if (r.get("NBolla") or "").strip() not in ("", "0")}
+            delivery_notes_count = len(ddt_keys)
+
         # Installments estimate
         if "ScadenzarioPRT" in tables:
             rows_scad = cls._export_table_rows(source_file, "ScadenzarioPRT")
@@ -172,9 +185,10 @@ class LegacyMigrationService:
             "partners_count": max(partners_count, 1),
             "products_count": max(products_count, 1),
             "stock_lots_count": stock_lots_count,
+            "delivery_notes_count": delivery_notes_count,
             "invoices_count": invoices_count,
             "installments_count": installments_count,
-            "estimated_seconds": max(5, int((partners_count + products_count + invoices_count) / 500))
+            "estimated_seconds": max(5, int((partners_count + products_count + delivery_notes_count + invoices_count) / 500))
         }
 
     @classmethod
@@ -440,6 +454,176 @@ class LegacyMigrationService:
         return migrated
 
     @classmethod
+    def extract_and_migrate_delivery_notes(
+        cls, db: Session, source_file: str, limit: Optional[int] = None
+    ) -> int:
+        filename = os.path.basename(source_file)
+        clean_name = cls._clean_source_filename(source_file)
+        source_names = list({filename, clean_name})
+
+        rows = cls._export_table_rows(source_file, "T1DettMovScadRis")
+        if not rows:
+            rows = cls._export_table_rows(source_file, "T_STAMPA_DDT")
+        if not rows:
+            return 0
+
+        # Group rows by (NBolla, DataDoc, RagSoc)
+        ddts_map: Dict[Tuple[str, str, str], List[Dict[str, str]]] = {}
+        for r in rows:
+            num = (r.get("NBolla") or r.get("numdoc") or "").strip()
+            dt = (r.get("DataDoc") or "").strip()
+            rag = (r.get("RagSoc") or "").strip()
+            if num and num != "0":
+                key = (num, dt, rag)
+                ddts_map.setdefault(key, []).append(r)
+
+        keys_to_process = list(ddts_map.keys())
+        if limit:
+            keys_to_process = keys_to_process[:limit]
+
+        migrated_ddts = 0
+
+        for (num_str, dt_str, ragsoc) in keys_to_process:
+            ddt_rows = ddts_map[(num_str, dt_str, ragsoc)]
+            first_row = ddt_rows[0]
+
+            doc_date = cls.parse_access_date(dt_str) or date.today()
+            anno = doc_date.year
+            try:
+                num = int(num_str)
+            except ValueError:
+                num = 1
+            numero_completo = f"DDT-{anno}-{num:04d}"
+
+            sync_ddt = db.query(LegacyMigrationSync).filter(
+                LegacyMigrationSync.entity_type == "delivery_note",
+                LegacyMigrationSync.legacy_id == f"{num_str}_{dt_str}_{ragsoc}",
+                LegacyMigrationSync.source_file.in_(source_names)
+            ).first()
+            if sync_ddt:
+                continue
+
+            existing_ddt = db.query(DeliveryNote).filter_by(numero_completo=numero_completo).first()
+            if existing_ddt:
+                cliente_partner = db.query(Partner).filter_by(ragione_sociale=ragsoc).first()
+                if cliente_partner and existing_ddt.cliente_id == cliente_partner.id and existing_ddt.data_documento == doc_date:
+                    ddt = existing_ddt
+                else:
+                    max_num = db.query(func.max(DeliveryNote.numero)).filter_by(anno=anno).scalar() or 0
+                    num = max_num + 1
+                    numero_completo = f"DDT-{anno}-{num:04d}"
+                    existing_ddt = None
+
+            if not existing_ddt:
+                cid = str(first_row.get("IdCliente") or "")
+                sync_cli = db.query(LegacyMigrationSync).filter(
+                    LegacyMigrationSync.entity_type == "partner",
+                    LegacyMigrationSync.legacy_id == cid,
+                    LegacyMigrationSync.source_file.in_(source_names)
+                ).first()
+                cli_id = sync_cli.target_id if sync_cli else None
+                if not cli_id and ragsoc:
+                    p = db.query(Partner).filter_by(ragione_sociale=ragsoc).first()
+                    if p:
+                        cli_id = p.id
+                    else:
+                        p = Partner(ragione_sociale=ragsoc, tipo="cliente", nazione="IT", attivo=True)
+                        db.add(p)
+                        db.flush()
+                        cli_id = p.id
+                if not cli_id:
+                    fallback_cli = db.query(Partner).filter_by(tipo="cliente").first() or db.query(Partner).first()
+                    cli_id = fallback_cli.id if fallback_cli else None
+                if not cli_id:
+                    continue
+
+                items = []
+                colli_tot = 0
+                totale_imp = 0.0
+
+                for r_it in ddt_rows:
+                    aid = str(r_it.get("IdArt") or "")
+                    sync_art = db.query(LegacyMigrationSync).filter(
+                        LegacyMigrationSync.entity_type == "product",
+                        LegacyMigrationSync.legacy_id == aid,
+                        LegacyMigrationSync.source_file.in_(source_names)
+                    ).first()
+                    p_id = sync_art.target_id if sync_art else None
+                    prod = db.get(Product, p_id) if p_id else None
+                    if not prod:
+                        cod = (r_it.get("CodArt") or "").strip()
+                        if cod:
+                            prod = db.query(Product).filter_by(codice=cod).first()
+                    if not prod:
+                        desc = (r_it.get("DescArt") or "").strip()
+                        if desc:
+                            prod = db.query(Product).filter_by(descrizione=desc).first()
+                    if not prod:
+                        prod = db.query(Product).first()
+                    p_id = prod.id if prod else None
+                    if not p_id:
+                        continue
+
+                    try:
+                        qta = float(r_it.get("totqta") or r_it.get("QtaBolla") or r_it.get("qta") or 1.0)
+                    except ValueError:
+                        qta = 1.0
+
+                    try:
+                        prezzo = float(r_it.get("PrezzoMov") or r_it.get("prezzo") or (prod.prezzo_vendita if prod else 1.0))
+                    except ValueError:
+                        prezzo = prod.prezzo_vendita if prod else 1.0
+
+                    aliq = prod.aliquota_iva if (prod and prod.aliquota_iva is not None) else 4
+                    lotto = (r_it.get("lotto") or "").strip() or None
+                    dt_scad = cls.parse_access_date(r_it.get("ScadenzaR"))
+
+                    colli_tot += 1
+                    totale_imp += round(qta * prezzo, 2)
+
+                    items.append(DeliveryNoteItem(
+                        product_id=p_id,
+                        descrizione=r_it.get("DescArt", prod.descrizione if prod else "Articolo"),
+                        unita_misura=r_it.get("um", prod.unita_misura if prod else "KG"),
+                        colli=1,
+                        quantita=qta,
+                        prezzo_unitario=prezzo,
+                        aliquota_iva=aliq,
+                        lotto=lotto,
+                        data_scadenza=dt_scad
+                    ))
+
+                ddt = DeliveryNote(
+                    numero=num,
+                    anno=anno,
+                    numero_completo=numero_completo,
+                    data_documento=doc_date,
+                    cliente_id=cli_id,
+                    causale_trasporto="Vendita",
+                    porto="Franco",
+                    aspetto_beni="Colli",
+                    colli_totali=colli_tot,
+                    totale_imponibile=round(totale_imp, 2),
+                    stato="confermato",
+                    note=f"Importato da Access Bolla={num_str}",
+                    items=items
+                )
+                db.add(ddt)
+                db.flush()
+                migrated_ddts += 1
+
+            db.add(LegacyMigrationSync(
+                source_file=clean_name,
+                entity_type="delivery_note",
+                legacy_id=f"{num_str}_{dt_str}_{ragsoc}",
+                target_id=ddt.id,
+                anno=anno
+            ))
+
+        db.commit()
+        return migrated_ddts
+
+    @classmethod
     def extract_and_migrate_invoices_and_installments(
         cls, db: Session, source_file: str, limit: Optional[int] = None
     ) -> Tuple[int, int]:
@@ -649,10 +833,13 @@ class LegacyMigrationService:
         cls._notify_event_progress(db, event, 25, f"Migrati {p_count} partner e produttori...")
 
         prod_count = cls.extract_and_migrate_products(db, source_file, limit=limit)
-        cls._notify_event_progress(db, event, 50, f"Migrati {prod_count} articoli biologici...")
+        cls._notify_event_progress(db, event, 45, f"Migrati {prod_count} articoli biologici...")
 
         stock_count = cls.extract_and_migrate_stock_lots(db, source_file, limit=limit)
-        cls._notify_event_progress(db, event, 75, f"Migrati {stock_count} lotti di giacenza magazzino...")
+        cls._notify_event_progress(db, event, 65, f"Migrati {stock_count} lotti di giacenza magazzino...")
+
+        ddt_count = cls.extract_and_migrate_delivery_notes(db, source_file, limit=limit)
+        cls._notify_event_progress(db, event, 80, f"Migrati {ddt_count} documenti di trasporto (DDT)...")
 
         inv_count, inst_count = cls.extract_and_migrate_invoices_and_installments(db, source_file, limit=limit)
         cls._notify_event_progress(db, event, 95, f"Migrate {inv_count} fatture e {inst_count} rate scadenzario...")
@@ -665,6 +852,7 @@ class LegacyMigrationService:
             "migrated_partners": p_count,
             "migrated_products": prod_count,
             "migrated_stock_lots": stock_count,
+            "migrated_delivery_notes": ddt_count,
             "migrated_invoices": inv_count,
             "migrated_installments": inst_count
         }
